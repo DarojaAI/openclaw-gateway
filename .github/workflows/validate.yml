@@ -1,0 +1,32 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Python syntax
+        run: |
+          python3 -m py_compile scripts/*.py scripts/install/*.py
+
+      - name: Validate Bash syntax
+        run: |
+          bash -n scripts/*.sh scripts/install/*.sh scripts/remote/*.sh
+
+      - name: Validate JSON config
+        run: |
+          python3 -c "import json; json.load(open('config/openclaw-defaults.json'))"
+          python3 -c "import json; json.load(open('config/openclaw-test-vm.json'))"
+
+      - name: Check skill files exist
+        run: |
+          test -f config/skills/model-management/SKILL.md
+          test -f config/skills/maintenance/SKILL.md
+          test -f config/skills/session-commands/SKILL.md
