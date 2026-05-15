@@ -77,7 +77,7 @@
       }
     ],
     "defaults": {
-      "model": "openrouter/minimax/MiniMax-M2.7",
+      "model": "minimax/MiniMax-M2.7",
       "thinkingDefault": "minimal",
       "compaction": {
         "mode": "safeguard",
@@ -85,7 +85,7 @@
         "keepRecentTokens": 4000,
         "reserveTokensFloor": 20000,
         "maxHistoryShare": 0.1,
-        "model": "openrouter/anthropic/claude-haiku-4-5"
+        "model": "anthropic/claude-haiku-4-5"
       }
     }
   },

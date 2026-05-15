@@ -14,34 +14,46 @@ log_info "Installing OpenClaw Gateway from $REPO_ROOT"
 
 # 1. Install OpenClaw binary (if not already installed)
 if command -v openclaw &>/dev/null; then
-    log_info "OpenClaw already installed: $(openclaw --version)"
+    log_info "OpenClaw binary already installed"
 else
-    log_info "Installing OpenClaw..."
-    bash "$SCRIPT_DIR/install.sh"
+    OPENCLAW_BIN="$REPO_ROOT/openclaw"
+    if [[ -f "$OPENCLAW_BIN" ]]; then
+        log_info "Installing OpenClaw binary..."
+        chmod +x "$OPENCLAW_BIN"
+        cp "$OPENCLAW_BIN" /usr/local/bin/openclaw
+        log_info "OpenClaw binary installed"
+    else
+        log_warn "OpenClaw binary not found at $OPENCLAW_BIN"
+    fi
 fi
 
 # 2. Install model manager globally
 model_manager_src="$REPO_ROOT/scripts/openclaw-model-manager.py"
 model_manager_dst="/usr/local/bin/openclaw-model-manager"
 if [[ -f "$model_manager_src" ]]; then
+    log_info "Installing OpenClaw model manager..."
+    chmod +x "$model_manager_src"
     cp "$model_manager_src" "$model_manager_dst"
-    chmod +x "$model_manager_dst"
-    log_info "Installed openclaw-model-manager to $model_manager_dst"
+    log_info "Model manager installed to $model_manager_dst"
 else
-    log_warn "openclaw-model-manager.py not found"
+    log_warn "Model manager not found at $model_manager_src"
 fi
 
-# 3. Deploy OpenClaw config (skills, defaults, workspace)
-# This uses the existing config.sh which expects repo_root as first arg
-bash "$SCRIPT_DIR/config.sh" "$REPO_ROOT"
+# 3. Config is written by L3 (linux-desktop-seed) deploy pipeline
+# L3b (this repo) owns canonical defaults in config/openclaw-defaults.json
+# L3 writes the full config via merge-openclaw-config.py during deploy
+# L2 (linux-desktop-setup) handles VM installation, not configuration
 
 # 4. Install cost monitor companion script
 cost_monitor_src="$REPO_ROOT/scripts/cost-monitor.py"
 cost_monitor_dst="/usr/local/bin/openclaw-cost-monitor"
 if [[ -f "$cost_monitor_src" ]]; then
+    log_info "Installing OpenClaw cost monitor..."
+    chmod +x "$cost_monitor_src"
     cp "$cost_monitor_src" "$cost_monitor_dst"
-    chmod +x "$cost_monitor_dst"
-    log_info "Installed cost-monitor to $cost_monitor_dst"
+    log_info "Cost monitor installed to $cost_monitor_dst"
+else
+    log_warn "Cost monitor not found at $cost_monitor_src"
 fi
 
 log_info "OpenClaw Gateway installation complete"
