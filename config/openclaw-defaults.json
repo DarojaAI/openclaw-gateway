@@ -10,7 +10,7 @@
         "reserveTokensFloor": 20000
       },
       "maxConcurrent": 4,
-      "model": "minimax/MiniMax-M2.7",
+      "model": "openrouter/minimax/MiniMax-M2.7",
       "models": {
         "openrouter/anthropic/claude-haiku-4-5": {
           "alias": "ensign"
@@ -24,7 +24,7 @@
         "openrouter/morph/morph-v3-fast": {
           "alias": "speedy"
         },
-        "minimax/MiniMax-M2.7": {
+        "openrouter/minimax/MiniMax-M2.7": {
           "alias": "coder"
         }
       },
