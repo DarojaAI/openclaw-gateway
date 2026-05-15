@@ -14,11 +14,17 @@ jobs:
 
       - name: Validate Python syntax
         run: |
-          python3 -m py_compile scripts/*.py scripts/install/*.py
+          python3 -m py_compile scripts/*.py
+          if compgen -G "scripts/install/*.py" > /dev/null; then
+            python3 -m py_compile scripts/install/*.py
+          fi
 
       - name: Validate Bash syntax
         run: |
-          bash -n scripts/*.sh scripts/install/*.sh scripts/remote/*.sh
+          bash -n scripts/*.sh scripts/remote/*.sh
+          if compgen -G "scripts/install/*.sh" > /dev/null; then
+            bash -n scripts/install/*.sh
+          fi
 
       - name: Validate JSON config
         run: |
