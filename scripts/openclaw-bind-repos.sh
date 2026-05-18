@@ -136,12 +136,20 @@ if [ -n "$ALL_CHANNEL_IDS" ]; then
 fi
 
 # Reload systemd and restart gateway to pick up new token and channels
-echo "Reloading systemd and restarting gateway..."
+# NOTE: Only restart if gateway is already running; deploy workflow handles
+# the initial start when doing clean stop-then-restart cycles.
+echo "Reloading systemd and updating gateway config..."
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@$SERVER_IP bash <<'RESTART_SCRIPT'
     set -e
+    # Always reload systemd to pick up new override.conf
     sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user daemon-reload
-    sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway.service
-    echo "Gateway restarted"
+    # Only restart if already active; otherwise caller (deploy workflow) starts it
+    if sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active --quiet openclaw-gateway.service 2>/dev/null; then
+        sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway.service
+        echo "Gateway restarted (was active)"
+    else
+        echo "Gateway not active; skipping restart (deploy workflow will start it)"
+    fi
 RESTART_SCRIPT
 
 # Clean up temp scripts
