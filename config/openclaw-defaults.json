@@ -184,6 +184,23 @@
             "maxTokens": 8192,
             "name": "Morph V3 Fast",
             "reasoning": false
+          },
+          {
+            "id": "openrouter/moonshotai/kimi-k2.6",
+            "name": "MoonshotAI: Kimi K2.6",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
           }
         ]
       }
