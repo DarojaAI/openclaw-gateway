@@ -67,7 +67,7 @@
   },
   "commands": {
     "native": "auto",
-    "nativeSkills": true,
+    "nativeSkills": "auto",
     "ownerDisplay": "raw",
     "restart": true
   },
