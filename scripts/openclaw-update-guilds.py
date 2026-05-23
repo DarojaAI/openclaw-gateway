@@ -17,10 +17,6 @@ def main():
         config["channels"] = {}
     if "discord" not in config["channels"]:
         config["channels"]["discord"] = {}
-    # Disable streaming to prevent tool-level chatter from being posted to Discord
-    if "streaming" not in config["channels"]["discord"]:
-        config["channels"]["discord"]["streaming"] = {}
-    config["channels"]["discord"]["streaming"]["mode"] = "off"
     if "guilds" not in config["channels"]["discord"]:
         config["channels"]["discord"]["guilds"] = {}
     if guild_id not in config["channels"]["discord"]["guilds"]:
