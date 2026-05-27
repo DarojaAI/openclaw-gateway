@@ -41,7 +41,6 @@ fetch_channel() {
 		--jq ".variables[] | select(.name == \"$CHANNEL_VAR\") | .value" 2>/dev/null) || true
 
 	if [ -n "$CH_ID" ]; then
-		# flock to avoid race on the shared temp file
 		(
 			flock -x 200
 			echo "$REPO_FULL $CH_ID" >> "$CHANNELS_FILE"
@@ -53,10 +52,8 @@ fetch_channel() {
 }
 export -f fetch_channel
 
-# Run up to 4 GH API calls in parallel
 echo "$TARGET_REPOS" | jq -r '.[]' | xargs -P 4 -I {} bash -c 'fetch_channel "$@"' _ {}
 
-# Build a lookup table
 unset -f fetch_channel
 export CHANNELS_FILE
 
@@ -93,7 +90,7 @@ export -f ensure_repo
 echo "$TARGET_REPOS" | jq -r '.[]' | xargs -P 4 -I {} bash -c 'ensure_repo "$@"' _ {}
 unset -f ensure_repo
 
-# ── Phase 4: Configure agents sequentially (NOT parallel — JSON file writes) ──
+# ── Phase 4: Configure agents sequentially ──
 echo "=========================================="
 echo "Phase 4: Configuring agents..."
 echo "=========================================="
@@ -106,7 +103,6 @@ while IFS=' ' read -r REPO_FULL CH_ID; do
 	ssh -n -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
 		"bash /tmp/linux-desktop-setup/scripts/remote/configure-openclaw-agent.sh '$TARGET_REPO' '$CH_ID'"
 
-	# Collect channel IDs for guild config
 	if ! echo "$ALL_CHANNEL_IDS" | grep -q "\"$CH_ID\""; then
 		if [ -z "$ALL_CHANNEL_IDS" ]; then
 			ALL_CHANNEL_IDS="\"$CH_ID\""
@@ -118,7 +114,7 @@ done < "$CHANNELS_FILE"
 
 rm -f "$CHANNELS_FILE" "${CHANNELS_FILE}.lock"
 
-# ── Phase 5: Update Discord token (sequential) ──
+# ── Phase 5: Update Discord token ──
 echo "=========================================="
 echo "Phase 5: Updating Discord token..."
 echo "=========================================="
@@ -156,12 +152,72 @@ if [ -n "$ALL_CHANNEL_IDS" ]; then
 		"sudo -u desktopuser python3 /tmp/openclaw-update-guilds.py \"$CONFIG_FILE\" \"$GUILD_ID\" $CHANNEL_ARGS"
 fi
 
-# ── Phase 7: Restart gateway ──
+# ── Phase 7: Restart gateway — ONLY after active-session check ──
+# CRITICAL: The main user conversation session is stored in .jsonl files on disk.
+# A gateway restart clears the in-memory session binding cache, which can cause
+# Discord messages to open fresh sessions instead of restoring existing ones.
+# We MUST check for active .jsonl sessions before restarting.
 echo "=========================================="
 echo "Phase 7: Restarting gateway..."
 echo "=========================================="
 
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" bash <<'RESTART_SCRIPT'
+SKIP_RESTART=0
+
+SCRIPT_ON_VM=$(
+	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+		"test -f /home/desktopuser/.openclaw/scripts/monitor/check-active-sessions.sh && echo found" \
+		2>/dev/null || echo ""
+)
+
+if [[ "$SCRIPT_ON_VM" == "found" ]]; then
+	echo "Checking for active sessions..."
+	if ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+		"bash /home/desktopuser/.openclaw/scripts/monitor/check-active-sessions.sh '$SERVER_IP'" 2>&1; then
+		echo "No active sessions — gateway may be restarted."
+	else
+		echo "ACTIVE SESSIONS DETECTED — skipping gateway restart to preserve conversation memory."
+		echo "Config changes will take effect on next gateway start."
+		SKIP_RESTART=1
+	fi
+else
+	# Inline fallback — used before the script is deployed to the VM
+	MAIN_ACTIVE=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+		'python3 -c "
+import json, os, glob
+from datetime import datetime, timezone
+
+threshold = 15 * 60  # 15 minutes
+for sd in glob.glob('\''/home/desktopuser/.openclaw/agents/*/sessions'\''):
+    for sf in glob.glob(os.path.join(sd, '\''*.jsonl'\'')):
+        try:
+            with open(sf) as f:
+                lines = f.readlines()
+            if not lines:
+                continue
+            last = json.loads(lines[-1].strip())
+            ts = last.get('\''timestamp'\'') or last.get('\''created_at'\'')
+            if not ts:
+                continue
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(ts.replace('\''Z'\'','\''+00:00'\''))).total_seconds()
+            if age <= threshold:
+                print('\''active: '\'' + os.path.basename(sf))
+        except Exception:
+            pass
+print('\''done'\'')
+" 2>/dev/null' || true)
+
+	if echo "$MAIN_ACTIVE" | grep -q "active:"; then
+		echo "ACTIVE SESSIONS DETECTED — skipping gateway restart to preserve conversation memory."
+		SKIP_RESTART=1
+	else
+		echo "No active main sessions found — gateway may be restarted."
+	fi
+fi
+
+if [[ "$SKIP_RESTART" -eq 1 ]]; then
+	echo "Skipping restart. Config changes will take effect on next gateway start."
+else
+	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" bash <<'RESTART_SCRIPT'
 	set -e
 	sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user daemon-reload
 	if sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active --quiet openclaw-gateway.service 2>/dev/null; then
@@ -171,6 +227,7 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" bash <<'R
 		echo "Gateway not active; skipping restart"
 	fi
 RESTART_SCRIPT
+fi
 
 # Cleanup
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
