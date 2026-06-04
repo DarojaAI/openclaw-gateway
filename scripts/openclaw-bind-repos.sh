@@ -40,14 +40,19 @@ fetch_channel() {
 	CH_ID=$(GH_TOKEN="$VM_GITHUB_TOKEN" gh api "repos/$TARGET_OWNER/$TARGET_REPO/actions/variables" \
 		--jq ".variables[] | select(.name == \"$CHANNEL_VAR\") | .value" 2>/dev/null) || true
 
-	if [ -n "$CH_ID" ]; then
+	# Detect API error responses (404, 403, etc.) vs actual variable values
+	if [ -n "$CH_ID" ] && echo "$CH_ID" | grep -qE '^[0-9]{17,20}$'; then
 		(
 			flock -x 200
 			echo "$REPO_FULL $CH_ID" >> "$CHANNELS_FILE"
 		) 200>"${CHANNELS_FILE}.lock"
 		echo "[OK] $REPO_FULL -> $CH_ID"
 	else
-		echo "[SKIP] $REPO_FULL (no $CHANNEL_VAR)"
+		if [ -n "$CH_ID" ]; then
+			echo "[SKIP] $REPO_FULL (API error or invalid response: ${CH_ID:0:80})"
+		else
+			echo "[SKIP] $REPO_FULL (no $CHANNEL_VAR)"
+		fi
 	fi
 }
 export -f fetch_channel
@@ -82,8 +87,8 @@ ensure_repo() {
 	TARGET_OWNER=$(echo "$REPO_FULL" | cut -d'/' -f1)
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
 	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
-		"VM_GITHUB_TOKEN=$VM_GITHUB_TOKEN bash /tmp/linux-desktop-setup/scripts/remote/ensure-repo.sh '$TARGET_OWNER' '$TARGET_REPO'" \
-		2>/dev/null && echo "[OK] $REPO_FULL" || echo "[FAIL] $REPO_FULL"
+		"VM_GITHUB_TOKEN=$VM_GITHUB_TOKEN bash /home/desktopuser/.openclaw/scripts/remote/ensure-repo.sh '$TARGET_OWNER' '$TARGET_REPO'" \
+		&& echo "[OK] $REPO_FULL" || echo "[FAIL] $REPO_FULL"
 }
 export -f ensure_repo
 
@@ -101,7 +106,7 @@ while IFS=' ' read -r REPO_FULL CH_ID; do
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
 	echo "Binding: $TARGET_REPO -> $CH_ID"
 	ssh -n -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
-		"bash /tmp/linux-desktop-setup/scripts/remote/configure-openclaw-agent.sh '$TARGET_REPO' '$CH_ID'"
+		"bash /home/desktopuser/.openclaw/scripts/remote/configure-openclaw-agent.sh '$TARGET_REPO' '$CH_ID'"
 
 	if ! echo "$ALL_CHANNEL_IDS" | grep -q "\"$CH_ID\""; then
 		if [ -z "$ALL_CHANNEL_IDS" ]; then
@@ -125,7 +130,7 @@ if [ -z "${DISCORD_BOT_TOKEN:-}" ]; then
 fi
 
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
-	"DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN bash /tmp/linux-desktop-setup/scripts/remote/update-discord-token.sh"
+	"DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN bash /home/desktopuser/.openclaw/scripts/remote/update-discord-token.sh"
 
 # ── Phase 6: Update guilds channels ──
 if [ -n "$ALL_CHANNEL_IDS" ]; then
@@ -217,14 +222,21 @@ fi
 if [[ "$SKIP_RESTART" -eq 1 ]]; then
 	echo "Skipping restart. Config changes will take effect on next gateway start."
 else
+	# On fresh VMs the user D-Bus bus may not exist yet — check before restarting
 	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" bash <<'RESTART_SCRIPT'
-	set -e
-	sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user daemon-reload
-	if sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active --quiet openclaw-gateway.service 2>/dev/null; then
-		sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway.service
-		echo "Gateway restarted"
+	USER_ID=$(id -u desktopuser)
+	XDG_RUNTIME_DIR="/run/user/${USER_ID}"
+	DBUS_ADDR="unix:path=${XDG_RUNTIME_DIR}/bus"
+
+	if [ -S "${XDG_RUNTIME_DIR}/bus" ]; then
+		if sudo -u desktopuser XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR" systemctl --user is-active --quiet openclaw-gateway.service 2>/dev/null; then
+			sudo -u desktopuser XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR" systemctl --user restart openclaw-gateway.service
+			echo "Gateway restarted"
+		else
+			echo "Gateway not active; skipping restart"
+		fi
 	else
-		echo "Gateway not active; skipping restart"
+		echo "WARN: systemd user bus not available — skipping restart, ensure step will start gateway"
 	fi
 RESTART_SCRIPT
 fi
