@@ -37,18 +37,27 @@ fetch_channel() {
 	TARGET_OWNER=$(echo "$REPO_FULL" | cut -d'/' -f1)
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
 
-	CH_ID=$(GH_TOKEN="$VM_GITHUB_TOKEN" gh api "repos/$TARGET_OWNER/$TARGET_REPO/actions/variables" \
-		--jq ".variables[] | select(.name == \"$CHANNEL_VAR\") | .value" 2>/dev/null) || true
+	RAW=$(GH_TOKEN="$VM_GITHUB_TOKEN" gh api "repos/$TARGET_OWNER/$TARGET_REPO/actions/variables" \
+		--jq ".variables[] | select(.name == \"$CHANNEL_VAR\") | .value" 2>/dev/null)
 
-	if [ -n "$CH_ID" ]; then
-		(
-			flock -x 200
-			echo "$REPO_FULL $CH_ID" >> "$CHANNELS_FILE"
-		) 200>"${CHANNELS_FILE}.lock"
-		echo "[OK] $REPO_FULL -> $CH_ID"
-	else
-		echo "[SKIP] $REPO_FULL (no $CHANNEL_VAR)"
+	# Detect API error (JSON) or empty — treat as SKIP, not OK
+	if [ -z "$RAW" ] || echo "$RAW" | grep -qE '^\{'; then
+		echo "[SKIP] $REPO_FULL (API error or $CHANNEL_VAR not found)"
+		return 0
 	fi
+
+	# Validate channel ID is numeric 17-20 digits before accepting
+	if ! echo "$RAW" | grep -qE '^[0-9]{17,20}$'; then
+		echo "[SKIP] $REPO_FULL (invalid channel ID format)"
+		return 0
+	fi
+
+	CH_ID="$RAW"
+	(
+		flock -x 200
+		echo "$REPO_FULL $CH_ID" >> "$CHANNELS_FILE"
+	) 200>"${CHANNELS_FILE}.lock"
+	echo "[OK] $REPO_FULL -> $CH_ID"
 }
 export -f fetch_channel
 
