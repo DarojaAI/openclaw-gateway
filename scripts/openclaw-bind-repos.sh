@@ -71,10 +71,10 @@ echo "=========================================="
 echo "Phase 2: Unlocking config on server..."
 echo "=========================================="
 
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"chmod 755 /home/desktopuser/.openclaw && chmod 666 /home/desktopuser/.openclaw/openclaw.json"
 
-if ! ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+if ! ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"sudo -u desktopuser test -w /home/desktopuser/.openclaw/openclaw.json" 2>/dev/null; then
 	echo "ERROR: Config file not writable by desktopuser"
 	exit 1
@@ -90,7 +90,7 @@ ensure_repo() {
 	local TARGET_OWNER TARGET_REPO
 	TARGET_OWNER=$(echo "$REPO_FULL" | cut -d'/' -f1)
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
-	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+	ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 		"VM_GITHUB_TOKEN=$VM_GITHUB_TOKEN bash /home/desktopuser/.openclaw/scripts/remote/ensure-repo.sh '$TARGET_OWNER' '$TARGET_REPO'" \
 		2>/dev/null && echo "[OK] $REPO_FULL" || echo "[FAIL] $REPO_FULL"
 }
@@ -109,7 +109,7 @@ while IFS=' ' read -r REPO_FULL CH_ID; do
 	[ -z "$REPO_FULL" ] && continue
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
 	echo "Binding: $TARGET_REPO -> $CH_ID"
-	ssh -n -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+	ssh -n -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 		"bash /home/desktopuser/.openclaw/scripts/remote/configure-openclaw-agent.sh '$TARGET_REPO' '$CH_ID'"
 
 	if ! echo "$ALL_CHANNEL_IDS" | grep -q "\"$CH_ID\""; then
@@ -133,7 +133,7 @@ if [ -z "${DISCORD_BOT_TOKEN:-}" ]; then
 	exit 1
 fi
 
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN bash /home/desktopuser/.openclaw/scripts/remote/update-discord-token.sh"
 
 # ── Phase 6: Update guilds channels ──
@@ -142,11 +142,11 @@ if [ -n "$ALL_CHANNEL_IDS" ]; then
 	echo "Phase 6: Updating guilds channels..."
 	echo "=========================================="
 
-	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+	ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 		"chmod 666 /home/desktopuser/.openclaw/openclaw.json"
 
-	scp -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 \
-		scripts/openclaw-update-guilds.py "root@$SERVER_IP:/tmp/openclaw-update-guilds.py"
+	scp -o StrictHostKeyChecking=no \
+		scripts/openclaw-update-guilds.py "${SSH_USER}@${SERVER_IP}:/tmp/openclaw-update-guilds.py"
 
 	GUILD_ID="${DISCORD_GUILD_ID:-1485047825967480862}"
 	CONFIG_FILE="/home/desktopuser/.openclaw/openclaw.json"
@@ -157,7 +157,7 @@ if [ -n "$ALL_CHANNEL_IDS" ]; then
 		CHANNEL_ARGS="$CHANNEL_ARGS $ch_clean"
 	done
 
-	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+	ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 		"sudo -u desktopuser python3 /tmp/openclaw-update-guilds.py \"$CONFIG_FILE\" \"$GUILD_ID\" $CHANNEL_ARGS"
 fi
 
@@ -173,14 +173,14 @@ echo "=========================================="
 SKIP_RESTART=0
 
 SCRIPT_ON_VM=$(
-	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+	ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 		"test -f /home/desktopuser/.openclaw/scripts/monitor/check-active-sessions.sh && echo found" \
 		2>/dev/null || echo ""
 )
 
 if [[ "$SCRIPT_ON_VM" == "found" ]]; then
 	echo "Checking for active sessions..."
-	if ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+	if ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 		"bash /home/desktopuser/.openclaw/scripts/monitor/check-active-sessions.sh '$SERVER_IP'" 2>&1; then
 		echo "No active sessions — gateway may be restarted."
 	else
@@ -190,7 +190,7 @@ if [[ "$SCRIPT_ON_VM" == "found" ]]; then
 	fi
 else
 	# Inline fallback — used before the script is deployed to the VM
-	MAIN_ACTIVE=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+	MAIN_ACTIVE=$(ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 		'python3 -c "
 import json, os, glob
 from datetime import datetime, timezone
@@ -226,7 +226,7 @@ fi
 if [[ "$SKIP_RESTART" -eq 1 ]]; then
 	echo "Skipping restart. Config changes will take effect on next gateway start."
 else
-	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" bash <<'RESTART_SCRIPT'
+	ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" bash <<'RESTART_SCRIPT'
 	set -e
 	sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user daemon-reload
 	if sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active --quiet openclaw-gateway.service 2>/dev/null; then
@@ -239,11 +239,11 @@ RESTART_SCRIPT
 fi
 
 # Cleanup
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"rm -f /tmp/openclaw-update-guilds.py"
 
 # Re-lock config
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"chmod 444 /home/desktopuser/.openclaw/openclaw.json" 2>/dev/null || true
 
 echo "All OpenClaw bindings processed"
