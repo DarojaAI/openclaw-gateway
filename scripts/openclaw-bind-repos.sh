@@ -82,7 +82,7 @@ ensure_repo() {
 	TARGET_OWNER=$(echo "$REPO_FULL" | cut -d'/' -f1)
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
 	ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
-		"VM_GITHUB_TOKEN=$VM_GITHUB_TOKEN bash /tmp/linux-desktop-setup/scripts/remote/ensure-repo.sh '$TARGET_OWNER' '$TARGET_REPO'" \
+		"VM_GITHUB_TOKEN=$VM_GITHUB_TOKEN bash /home/desktopuser/.openclaw/scripts/remote/ensure-repo.sh '$TARGET_OWNER' '$TARGET_REPO'" \
 		2>/dev/null && echo "[OK] $REPO_FULL" || echo "[FAIL] $REPO_FULL"
 }
 export -f ensure_repo
@@ -101,7 +101,7 @@ while IFS=' ' read -r REPO_FULL CH_ID; do
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
 	echo "Binding: $TARGET_REPO -> $CH_ID"
 	ssh -n -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
-		"bash /tmp/linux-desktop-setup/scripts/remote/configure-openclaw-agent.sh '$TARGET_REPO' '$CH_ID'"
+		"bash /home/desktopuser/.openclaw/scripts/remote/configure-openclaw-agent.sh '$TARGET_REPO' '$CH_ID'"
 
 	if ! echo "$ALL_CHANNEL_IDS" | grep -q "\"$CH_ID\""; then
 		if [ -z "$ALL_CHANNEL_IDS" ]; then
@@ -125,7 +125,7 @@ if [ -z "${DISCORD_BOT_TOKEN:-}" ]; then
 fi
 
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "root@$SERVER_IP" \
-	"DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN bash /tmp/linux-desktop-setup/scripts/remote/update-discord-token.sh"
+	"DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN bash /home/desktopuser/.openclaw/scripts/remote/update-discord-token.sh"
 
 # ── Phase 6: Update guilds channels ──
 if [ -n "$ALL_CHANNEL_IDS" ]; then
