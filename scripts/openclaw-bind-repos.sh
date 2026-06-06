@@ -37,18 +37,40 @@ fetch_channel() {
 	TARGET_OWNER=$(echo "$REPO_FULL" | cut -d'/' -f1)
 	TARGET_REPO=$(echo "$REPO_FULL" | cut -d'/' -f2)
 
-	RAW=$(GH_TOKEN="$VM_GITHUB_TOKEN" gh api "repos/$TARGET_OWNER/$TARGET_REPO/actions/variables" \
-		--jq ".variables[] | select(.name == \"$CHANNEL_VAR\") | .value" 2>/dev/null)
+	local ERR_FILE
+	ERR_FILE=$(mktemp)
 
-	# Detect API error (JSON) or empty — treat as SKIP, not OK
-	if [ -z "$RAW" ] || echo "$RAW" | grep -qE '^\{'; then
-		echo "[SKIP] $REPO_FULL (API error or $CHANNEL_VAR not found)"
+	RAW=$(GH_TOKEN="$VM_GITHUB_TOKEN" gh api "repos/$TARGET_OWNER/$TARGET_REPO/actions/variables" \
+		--jq ".variables[] | select(.name == \"$CHANNEL_VAR\") | .value" 2>"$ERR_FILE")
+	GH_EXIT=$?
+
+	# If gh command itself failed, print the actual error and abort
+	if [ $GH_EXIT -ne 0 ]; then
+		local ERR_MSG
+		ERR_MSG=$(cat "$ERR_FILE" | head -n 1)
+		echo "[ERROR] $REPO_FULL — gh API failed: $ERR_MSG" >&2
+		rm -f "$ERR_FILE"
+		return 1
+	fi
+
+	# If API returned empty, the variable genuinely doesn't exist
+	if [ -z "$RAW" ]; then
+		echo "[SKIP] $REPO_FULL — $CHANNEL_VAR not found in repo variables"
+		rm -f "$ERR_FILE"
 		return 0
+	fi
+
+	# If API returned JSON (error object), report it clearly
+	if echo "$RAW" | grep -qE '^\s*\{'; then
+		echo "[ERROR] $REPO_FULL — GitHub API returned error JSON: $RAW" >&2
+		rm -f "$ERR_FILE"
+		return 1
 	fi
 
 	# Validate channel ID is numeric 17-20 digits before accepting
 	if ! echo "$RAW" | grep -qE '^[0-9]{17,20}$'; then
-		echo "[SKIP] $REPO_FULL (invalid channel ID format)"
+		echo "[SKIP] $REPO_FULL — invalid channel ID format: '$RAW'"
+		rm -f "$ERR_FILE"
 		return 0
 	fi
 
@@ -58,6 +80,7 @@ fetch_channel() {
 		echo "$REPO_FULL $CH_ID" >> "$CHANNELS_FILE"
 	) 200>"${CHANNELS_FILE}.lock"
 	echo "[OK] $REPO_FULL -> $CH_ID"
+	rm -f "$ERR_FILE"
 }
 export -f fetch_channel
 
