@@ -1,0 +1,28 @@
+[Unit]
+Description=OpenClaw Shared Viz Service (mermaid/graphviz/chartjs render)
+Documentation=https://github.com/DarojaAI/openclaw-gateway
+# Tie to the gateway lifecycle — start before so it's ready when agents boot
+Before=openclaw-gateway.service
+# Restart with gateway too
+PartOf=openclaw-gateway.service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/desktopuser/.openclaw/services/viz
+ExecStart=/usr/bin/node /home/desktopuser/.openclaw/services/viz/render-server.js
+Environment=VIZ_PORT=8766
+Environment=VIZ_CACHE_DIR=/home/desktopuser/.openclaw/services/viz/cache
+Environment=VIZ_HOST=localhost
+Environment=NODE_COMPILE_CACHE=/var/tmp/openclaw-compile-cache
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=3
+StartLimitIntervalSec=300
+TimeoutStopSec=15
+SuccessExitStatus=0 143
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

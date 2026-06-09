@@ -40,6 +40,29 @@ if [ -f "$SKILL_SRC" ]; then
   echo "Skill installed at: $SKILL_DST"
 fi
 
+# Install systemd user unit (idempotent — uses symlink so updates flow through)
+UNIT_SRC="$REPO_ROOT/etc/systemd/user/openclaw-viz.service"
+UNIT_DST_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+UNIT_DST="$UNIT_DST_DIR/openclaw-viz.service"
+if [ -f "$UNIT_SRC" ]; then
+  mkdir -p "$UNIT_DST_DIR"
+  ln -sf "$UNIT_SRC" "$UNIT_DST"
+  echo "Systemd unit installed at: $UNIT_DST"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user daemon-reload 2>/dev/null || true
+    if systemctl --user is-enabled openclaw-viz >/dev/null 2>&1; then
+      echo "Service already enabled; reloading config"
+    else
+      systemctl --user enable openclaw-viz 2>/dev/null && echo "Service enabled (autostart on login)"
+    fi
+    if systemctl --user is-active openclaw-viz >/dev/null 2>&1; then
+      systemctl --user restart openclaw-viz && echo "Service restarted"
+    else
+      systemctl --user start openclaw-viz && echo "Service started"
+    fi
+  fi
+fi
+
 echo ""
 echo "✓ Viz service installed at $DEST_DIR"
 echo ""
@@ -47,5 +70,7 @@ echo "Usage from any agent:"
 echo "  const viz = require('$DEST_DIR/discord-viz');"
 echo "  const pngPath = await viz.renderMermaid('graph TD; A-->B');"
 echo ""
-echo "To start the server now:"
-echo "  node $DEST_DIR/render-server.js &"
+echo "Service management:"
+echo "  systemctl --user status openclaw-viz"
+echo "  systemctl --user restart openclaw-viz"
+echo "  journalctl --user -u openclaw-viz -f"
