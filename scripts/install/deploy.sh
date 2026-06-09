@@ -56,4 +56,13 @@ else
     log_warn "Cost monitor not found at $cost_monitor_src"
 fi
 
+# 5. Install shared viz service (mermaid/graphviz/chartjs render server)
+viz_install_src="$REPO_ROOT/scripts/services/install-viz-service.sh"
+if [[ -f "$viz_install_src" ]]; then
+    log_info "Installing shared viz service..."
+    bash "$viz_install_src"
+else
+    log_warn "Viz service installer not found at $viz_install_src"
+fi
+
 log_info "OpenClaw Gateway installation complete"

@@ -33,7 +33,8 @@ bash scripts/install/deploy.sh
 
 | Component | Purpose |
 |-----------|---------|
-| `config/skills/` | Discord-integrated skills (model management, maintenance, session commands) |
+| `config/skills/` | Discord-integrated skills (model management, maintenance, session commands, viz) |
+| `config/services/viz/` | Shared mermaid/graphviz/chartjs render service (deployed to `~/.openclaw/services/viz/`) |
 | `scripts/openclaw-model-manager.py` | Model discovery, switching, cost tracking |
 | `scripts/cost-monitor.py` | Per-model usage and cost breakdown |
 | `scripts/openclaw-bind-repos.sh` | Auto-bind Discord channels to repos |
