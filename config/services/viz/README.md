@@ -101,6 +101,30 @@ npm install
 node render-server.js &
 ```
 
+Or via the gateway installer (recommended for fresh deploys):
+
+```bash
+bash /home/desktopuser/.openclaw/openclaw-gateway/scripts/services/install-viz-service.sh
+```
+
+The installer will:
+- Copy service files to `~/.openclaw/services/viz/`
+- Copy the skill to `~/.openclaw/skills/viz/SKILL.md`
+- Symlink the systemd unit from `etc/systemd/user/openclaw-viz.service` into `~/.config/systemd/user/`
+- Enable and start the service
+
+## Service Management
+
+```bash
+systemctl --user status openclaw-viz
+systemctl --user restart openclaw-viz
+journalctl --user -u openclaw-viz -f
+```
+
+The service is wired into the gateway lifecycle:
+- `Before=openclaw-gateway.service` — gateway won't come up until viz is ready
+- `PartOf=openclaw-gateway.service` — restart/stop the gateway and viz follows
+
 ## Bot Access
 
 This service is accessible to ALL OpenClaw agents on this host:
