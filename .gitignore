@@ -1,0 +1,5 @@
+# Viz service: deployed artifacts
+config/services/viz/node_modules/
+config/services/viz/cache/
+config/services/viz/.server.pid
+config/services/viz/server.log
