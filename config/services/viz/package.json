@@ -1,0 +1,16 @@
+{
+  "name": "openclaw-viz",
+  "version": "1.0.0",
+  "description": "Mermaid/Chart.js render service for OpenClaw Discord integration",
+  "main": "render-server.js",
+  "scripts": {
+    "start": "node render-server.js",
+    "render": "node render-cli.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "glob": "^13.0.6",
+    "minimist": "^1.2.8",
+    "playwright": "^1.60.0"
+  }
+}

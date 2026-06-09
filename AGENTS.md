@@ -14,6 +14,7 @@ This repo is Layer 3b in the infrastructure stack:
 
 - OpenClaw configuration (`config/openclaw-defaults.json`, `config/openclaw-test-vm.json`)
 - Discord skills (`config/skills/`)
+- Shared services used by multiple agents (`config/services/`)
 - OpenClaw installation and config scripts (`scripts/install/`)
 - Model management tools (`scripts/openclaw-model-manager.py`)
 - Cost monitoring (`scripts/cost-monitor.py`)
