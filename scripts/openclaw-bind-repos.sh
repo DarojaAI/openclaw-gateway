@@ -50,7 +50,7 @@ fetch_channel() {
 		ERR_MSG=$(cat "$ERR_FILE" | head -n 1)
 		echo "[ERROR] $REPO_FULL — gh API failed: $ERR_MSG" >&2
 		rm -f "$ERR_FILE"
-		return 1
+		return 0
 	fi
 
 	# If API returned empty, the variable genuinely doesn't exist
@@ -64,7 +64,7 @@ fetch_channel() {
 	if echo "$RAW" | grep -qE '^\s*\{'; then
 		echo "[ERROR] $REPO_FULL — GitHub API returned error JSON: $RAW" >&2
 		rm -f "$ERR_FILE"
-		return 1
+		return 0
 	fi
 
 	# Validate channel ID is numeric 17-20 digits before accepting
@@ -88,6 +88,13 @@ echo "$TARGET_REPOS" | jq -r '.[]' | xargs -P 4 -I {} bash -c 'fetch_channel "$@
 
 unset -f fetch_channel
 export CHANNELS_FILE
+
+#
+# Trap handler: always re-lock the live config, even if the script
+# exits early (Phase 1 failure, Phase 4 failure, SIGTERM, etc.).
+# Without this, a mid-script failure leaves openclaw.json mode 0666
+# and writable by any agent on the system.
+trap 'ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" "chmod 444 /home/desktopuser/.openclaw/openclaw.json" 2>/dev/null || true' EXIT
 
 # ── Phase 2: Unlock config on server ──
 echo "=========================================="
