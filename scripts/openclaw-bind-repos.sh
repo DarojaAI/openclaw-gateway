@@ -157,7 +157,7 @@ if [ -z "${DISCORD_BOT_TOKEN:-}" ]; then
 fi
 
 ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
-	"DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN bash /home/desktopuser/.openclaw/scripts/remote/update-discord-token.sh"
+	"DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN:-} OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-} bash /home/desktopuser/.openclaw/scripts/remote/update-discord-token.sh"
 
 # ── Phase 6: Update guilds channels ──
 if [ -n "$ALL_CHANNEL_IDS" ]; then
