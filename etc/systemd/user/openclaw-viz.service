@@ -1,11 +1,20 @@
 [Unit]
 Description=OpenClaw Shared Viz Service (mermaid/graphviz/chartjs render)
 Documentation=https://github.com/DarojaAI/openclaw-gateway
-# Tie to the gateway lifecycle — start before so it's ready when agents boot
-Before=openclaw-gateway.service
-# Restart with gateway too
-PartOf=openclaw-gateway.service
-After=network-online.target
+# Soft dependency on the gateway (Wants=, not PartOf=).
+#
+# 2026-06-09 incident regression: this file previously had
+#   Before=openclaw-gateway.service
+#   PartOf=openclaw-gateway.service
+# which caused a viz service reload to SIGTERM the gateway. PartOf= is the
+# wrong directive for "I want to start with the gateway" — it cascades
+# stop/restart lifecycle events to the parent unit. Wants= is correct.
+#
+# Do NOT reintroduce PartOf= or Before= here. If you need to coordinate
+# start order, use After= (which is a start-order hint, not a lifecycle
+# cascade). See AGENTS.md post-mortem 2026-06-09 for the full root cause.
+Wants=openclaw-gateway.service
+After=network-online.target openclaw-gateway.service
 Wants=network-online.target
 
 [Service]
