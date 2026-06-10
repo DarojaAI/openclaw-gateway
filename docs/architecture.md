@@ -1,6 +1,6 @@
 # OpenClaw Architecture — Canonical Reference
 
-> **Last updated:** 2026-05-24
+> **Last updated:** 2026-06-10
 > **Status:** PRODUCTION — test, head, and prod all verified working
 > **Violating any rule in this document will break the deploy pipeline.**
 
@@ -359,3 +359,111 @@ pre-commit run --all-files
 | 2026-05-23 | #433 | Created validation framework: `test-model-ids.py` + `tests/model-ids.bats` |
 | 2026-05-22 | #431 | Reverted model config to original with `openrouter` provider |
 | 2026-05-22 | #429 | SSH ControlMaster multiplexing |
+
+---
+
+## Systemd Service
+
+The gateway runs as a user systemd service:
+
+```ini
+[Unit]
+Description=OpenClaw Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=desktopuser
+WorkingDirectory=/home/desktopuser
+ExecStart=/usr/bin/node /path/to/openclaw/bin/openclaw.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Service commands:**
+```bash
+sudo systemctl start openclaw-gateway
+sudo systemctl stop openclaw-gateway
+sudo systemctl restart openclaw-gateway
+sudo systemctl status openclaw-gateway
+journalctl -u openclaw-gateway -f
+```
+
+---
+
+## Health Checks
+
+### 1. Gateway Health Endpoint
+
+```bash
+curl http://localhost:18789/health
+# Expected: {"status": "ok", "version": "..."}
+```
+
+### 2. Discord Bot Online
+
+Check Discord — bot should show as online with green indicator.
+
+### 3. Session Test
+
+Send a test message in the configured channel. Bot should respond.
+
+### 4. Journal Logs
+
+```bash
+journalctl -u openclaw-gateway --since "5 minutes ago"
+# Look for startup confirmation, no errors
+```
+
+---
+
+## Directory Structure
+
+```
+~/.openclaw/
+├── openclaw.json                     # Main config (merged from L3a)
+├── agents/
+│   ├── main/                         # Default agent
+│   │   ├── agent/
+│   │   │   ├── auth-profiles.json   # API credentials
+│   │   │   └── models.json          # Model catalog
+│   │   └── sessions/                # Session history
+│   └── [other-agents]/              # Per-agent directories
+├── memory/
+│   └── *.sqlite                     # Agent memory files
+└── skills/                          # Custom skills (optional)
+
+/opt/openclaw-gateway/               # Cloned repo (optional)
+/var/log/openclaw/                   # Logs (if configured)
+```
+
+---
+
+## Security
+
+### API Keys & Tokens
+
+- Stored in `~/.openclaw/agents/*/agent/auth-profiles.json`
+- Readable only by `desktopuser`
+- Never committed to git
+- Rotated via L3a redeploy
+
+### Gateway Auth Token
+
+The gateway API (port 18789) requires a bearer token:
+
+```bash
+curl -H "Authorization: Bearer $GATEWAY_AUTH_TOKEN" \
+  http://localhost:18789/api/sessions
+```
+
+This token is generated at deploy time and stored in `openclaw.json`.
+
+### Discord Bot Token
+
+Stored in GitHub secrets, injected at deploy time. Never visible in logs or config files in the repo.
+

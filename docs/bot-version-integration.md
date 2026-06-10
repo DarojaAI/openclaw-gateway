@@ -1,5 +1,7 @@
 # Discord Bot — Version Query Integration
 
+**Last Updated:** 2026-06-10
+
 This guide shows how the Discord bot (or any other bot) can reliably query the VM version using the new Version API.
 
 ## The Problem
