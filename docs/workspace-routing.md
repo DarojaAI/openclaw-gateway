@@ -1,6 +1,7 @@
 # OpenCLAW Workspace Routing
 
-**Version:** OpenCLAW v2026.04.11 (MiniMax compatible)
+**Last Updated:** 2026-06-10
+
 
 Route Discord channels to specific Git repos using a single OpenCLAW instance and a single VS Code window — no matter how many repos you manage.
 

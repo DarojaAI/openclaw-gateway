@@ -1,7 +1,7 @@
 # OpenCLAW Context Management Troubleshooting Log
 
-**OpenCLAW Version:** v2026.04.11 (MiniMax compatible)
-**Last Updated:** 2026-04-13
+**OpenCLAW:** Current version  
+**Last Updated:** 2026-06-10  
 **Purpose:** Document context management issues and fixes for future reference
 
 ---
