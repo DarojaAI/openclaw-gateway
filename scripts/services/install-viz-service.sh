@@ -27,8 +27,14 @@ done
 
 cd "$DEST_DIR"
 if [ ! -d node_modules ] || [ package.json -nt node_modules ]; then
-  echo "Installing dependencies..."
-  npm install --silent
+  if command -v npm >/dev/null 2>&1; then
+    echo "Installing dependencies..."
+    npm install --silent
+  else
+    echo "WARN: npm not found on PATH - skipping dependency install." >&2
+    echo "      The viz service will not start until node + npm are installed and 'npm install' is run in $DEST_DIR." >&2
+    echo "      To enable: install nodejs (e.g. apt install nodejs npm) and re-run this script." >&2
+  fi
 fi
 
 # Copy skill
@@ -50,15 +56,20 @@ if [ -f "$UNIT_SRC" ]; then
   echo "Systemd unit installed at: $UNIT_DST"
   if command -v systemctl >/dev/null 2>&1; then
     systemctl --user daemon-reload 2>/dev/null || true
-    if systemctl --user is-enabled openclaw-viz >/dev/null 2>&1; then
-      echo "Service already enabled; reloading config"
+    if ! command -v node >/dev/null 2>&1; then
+      echo "WARN: /usr/bin/node not found - skipping systemd service start." >&2
+      echo "      Install nodejs, then 'systemctl --user start openclaw-viz'." >&2
     else
-      systemctl --user enable openclaw-viz 2>/dev/null && echo "Service enabled (autostart on login)"
-    fi
-    if systemctl --user is-active openclaw-viz >/dev/null 2>&1; then
-      systemctl --user restart openclaw-viz && echo "Service restarted"
-    else
-      systemctl --user start openclaw-viz && echo "Service started"
+      if systemctl --user is-enabled openclaw-viz >/dev/null 2>&1; then
+        echo "Service already enabled; reloading config"
+      else
+        systemctl --user enable openclaw-viz 2>/dev/null && echo "Service enabled (autostart on login)" || echo "WARN: could not enable service" >&2
+      fi
+      if systemctl --user is-active openclaw-viz >/dev/null 2>&1; then
+        systemctl --user restart openclaw-viz && echo "Service restarted" || echo "WARN: could not restart service" >&2
+      else
+        systemctl --user start openclaw-viz && echo "Service started" || echo "WARN: could not start service (node missing or other issue)" >&2
+      fi
     fi
   fi
 fi
