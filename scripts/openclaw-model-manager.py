@@ -40,6 +40,21 @@ CACHE_TTL_SECONDS = 3600  # 1 hour
 CONFIG_PATH = Path.home() / ".openclaw" / "openclaw.json"
 COST_DB_PATH = Path.home() / ".openclaw" / "cost-log.db"
 
+# OpenClaw's per-model cost block is quoted in **dollars per million
+# tokens** — see session-cost-usage-2byiZUrq.js:estimateUsageCost which
+# computes ``input * cost.input + ...`` and divides the sum by 1e6
+# to produce a dollar total. The OpenRouter API returns prices in
+# **dollars per token** (``pricing.prompt = 1e-6`` means $1 per
+# million tokens). Display sites (``format_model_line`` and
+# ``cmd_show``) already multiply by 1e6; the persistence site (this
+# file's `cmd_switch` write at the cost block) was missing the
+# multiplier, which caused the cost report to come out 1e6 too small
+# (the per-agent attribution work in linux-desktop-seed#830 surfaced
+# the bug). The fix: convert at the write site so any future caller
+# reading ``openclaw.json`` sees per-million values consistent with
+# OpenClaw's formula.
+PER_MILLION_TOKENS = 1_000_000
+
 
 def log_info(msg: str):
     print(f"{BLUE}[INFO]{NC} {msg}")
@@ -222,7 +237,15 @@ def resolve_model_id(target: str, config: dict) -> str:
 
 
 def parse_price(value) -> float:
-    """Parse a pricing value from OpenRouter API."""
+    """Parse a pricing value from the OpenRouter catalog.
+
+    Returns the per-token dollar rate (e.g. ``1e-6`` for $1 per
+    million input tokens). Callers writing to ``openclaw.json``'s
+    per-model cost block must multiply by ``PER_MILLION_TOKENS``;
+    callers displaying to humans typically also multiply (so the
+    display matches what gets written). See ``PER_MILLION_TOKENS``
+    for the convention rationale.
+    """
     if value is None:
         return 0.0
     try:
@@ -267,8 +290,8 @@ def format_model_line(model: dict, aliases: dict, max_id_width: int) -> str:
     context = model.get("context_length", 0)
 
     pricing = model.get("pricing", {})
-    input_cost = parse_price(pricing.get("prompt", 0)) * 1_000_000
-    output_cost = parse_price(pricing.get("completion", 0)) * 1_000_000
+    input_cost = parse_price(pricing.get("prompt", 0)) * PER_MILLION_TOKENS
+    output_cost = parse_price(pricing.get("completion", 0)) * PER_MILLION_TOKENS
 
     free = is_free_model(model)
     reasoning = supports_reasoning(model)
@@ -410,10 +433,13 @@ def cmd_switch(args):
             "reasoning": supports_reasoning(model_data),
             "input": input_types,
             "cost": {
-                "input": parse_price(pricing.get("prompt")),
-                "output": parse_price(pricing.get("completion")),
-                "cacheRead": parse_price(pricing.get("input_cache_read")),
-                "cacheWrite": parse_price(pricing.get("input_cache_write")),
+                # OpenRouter prices are per-token; OpenClaw's runtime
+                # expects per-million-token values, so multiply here.
+                # See PER_MILLION_TOKENS for the convention rationale.
+                "input": parse_price(pricing.get("prompt")) * PER_MILLION_TOKENS,
+                "output": parse_price(pricing.get("completion")) * PER_MILLION_TOKENS,
+                "cacheRead": parse_price(pricing.get("input_cache_read")) * PER_MILLION_TOKENS,
+                "cacheWrite": parse_price(pricing.get("input_cache_write")) * PER_MILLION_TOKENS,
             },
             "contextWindow": context_length,
             "maxTokens": max_tokens,
@@ -499,8 +525,8 @@ def cmd_info(args):
     print(f"  Context:     {context:,} tokens ({context // 1000}K)")
 
     pricing = model_data.get("pricing", {})
-    input_cost = parse_price(pricing.get("prompt", 0)) * 1_000_000
-    output_cost = parse_price(pricing.get("completion", 0)) * 1_000_000
+    input_cost = parse_price(pricing.get("prompt", 0)) * PER_MILLION_TOKENS
+    output_cost = parse_price(pricing.get("completion", 0)) * PER_MILLION_TOKENS
     print(f"  Pricing:     ${input_cost:.4f} / 1M input | ${output_cost:.4f} / 1M output")
     if is_free_model(model_data):
         print(f"  {GREEN}  FREE MODEL{NC}")
