@@ -8,6 +8,12 @@ trigger: "/model"
 
 You help the user discover, switch between, and track costs for OpenRouter models available to OpenClaw agents.
 
+## ⚠️ Critical Rules (read first)
+
+1. **Provider is ALWAYS `openrouter`.** Every model ID must be prefixed with `openrouter/`. If the user says `xiaomi/mimov2.5`, you set `openrouter/xiaomi/mimov2.5`. No exceptions. This is true for ALL models in this gateway.
+2. **Validate against the catalog before setting.** Run `openclaw-model-manager search <query>` (or `models list` filtered) to confirm the exact ID exists. Don't accept user input at face value — OpenRouter IDs include the provider prefix and may not match what the user typed.
+3. **The catalog is the source of truth.** If a model isn't in `openclaw-model-manager list`, it's not available. Don't guess or auto-complete.
+
 ## Command Patterns
 
 ### List All Models
@@ -44,14 +50,18 @@ If they want only a specific provider: `openclaw-model-manager list --provider a
 - "use <model>"
 - "change model to <model>"
 
-**Action:** Run `openclaw-model-manager switch <target>`
+**Action:**
 
-This resolves aliases (like `burns`, `coder`, `ensign`) or accepts full model IDs. If the model is not in the local config, it auto-imports from OpenRouter. Then updates the default model and prompts for gateway restart.
+1. **Resolve the target to a full OpenRouter ID.** If the user gives a bare name like `xiaomi/mimov2.5`, prefix with `openrouter/`. If they give an alias (e.g. `burns`, `coder`, `ensign`), resolve it via `openclaw-model-manager search <alias>`.
+2. **Validate against the catalog.** Run `openclaw-model-manager list | grep <full_id>` (or `search`) to confirm the exact ID exists. If it doesn't match, stop and ask the user. Do not call `switch` with an unvalidated ID.
+3. **Set it.** Run `openclaw-model-manager switch <full_id>`.
+4. **Verify the saved value.** Read `~/.openclaw/openclaw.json` and confirm the `agents.defaults.model.primary` field matches the full OpenRouter ID (with `openrouter/` prefix). If it's missing the prefix, fix it and report.
+5. **Restart the gateway.** Run `systemctl --user restart openclaw-gateway.service` and confirm `is-active` returns `active`.
 
 After switching, inform the user:
-1. What model they switched to
-2. That a gateway restart is required
-3. Provide the restart command: `systemctl --user restart openclaw-gateway.service`
+1. What model you switched to (full ID with `openrouter/` prefix)
+2. That the gateway restart is done
+3. Any validation or correction you made along the way
 
 ### Show Model Info
 - "/model-info <model>"
@@ -118,14 +128,11 @@ tencent/hy3-preview:free [frida]
 **User:** switch to claude-haiku-4-5
 
 **You:**
-Switching to anthropic/claude-haiku-4-5 (ensign)...
+Switching to openrouter/anthropic/claude-haiku-4-5 (ensign)...
 
 ✅ Switched default model: openrouter/minimax/MiniMax-M2.7 → openrouter/anthropic/claude-haiku-4-5
 
-⚠️ Restart required to apply:
-`systemctl --user restart openclaw-gateway.service`
-
-Or run: `openclaw gateway restart`
+Gateway restarted, is-active: active.
 
 **User:** how much did burns cost today
 
