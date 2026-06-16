@@ -1,392 +1,213 @@
-# OpenClaw Gateway Skills Guide
-
-**Last Updated:** 2026-06-10  
-**Status:** CURRENT
-
----
+# Skills Management
 
 ## Overview
 
-Skills are reusable procedures that agents can invoke to perform specific tasks. Skills in OpenClaw are **Markdown-based** — each skill is a `SKILL.md` file that describes what the skill does, when to use it, and how to execute it.
+OpenClaw skills are reusable procedures that help the agent handle specific tasks through structured workflows. This document covers the skill lifecycle: creation, testing, deployment, and maintenance.
 
-This document explains how to create, register, and use skills in the gateway.
+## Architecture
 
----
+**Source of Truth:** `openclaw-gateway/config/skills/`
 
-## Skill Types
-
-| Type | Purpose | Example |
-|------|---------|---------|
-| **Built-in** | Core gateway functionality | session-commands, model-management |
-| **Service** | Wraps an external service | viz (diagram rendering) |
-| **Agent-specific** | Bound to a specific agent/repo | Custom skills in agent workspace |
-| **Shared** | Reusable across all agents | Maintenance, troubleshooting |
-
----
-
-## Skill Structure
-
-### Directory Layout
+Skills in this directory are canonical and deployed to all VMs running OpenClaw. Each skill is a self-contained directory with:
 
 ```
 config/skills/
-├── session-commands/
-│   └── SKILL.md
 ├── model-management/
-│   └── SKILL.md
-├── maintenance/
-│   └── SKILL.md
-└── viz/
-    └── SKILL.md
+│   ├── SKILL.md              # Main skill definition (required)
+│   ├── scripts/              # Optional helper scripts
+│   ├── references/           # Optional reference docs
+│   └── examples/             # Optional usage examples
 ```
 
-Each skill lives in its own directory under `config/skills/`. The `SKILL.md` file is the skill definition.
+## Skill File Structure
 
-### SKILL.md Format
+### SKILL.md (required)
+
+Every skill must have a `SKILL.md` file with front matter:
 
 ```markdown
-# Skill Name
-
-Brief one-line description.
-
-## When to Use This Skill
-
-Explain the conditions that trigger this skill.
-
-## Steps
-
-1. Step one
-2. Step two
-3. Step three
-
-## Examples
-
-\`\`\`bash
-# Example command
-openclaw do-thing
-\`\`\`
-
-## Notes
-
-Any warnings, prerequisites, or edge cases.
-```
-
-**Critical:** The skill must be **self-contained** — all information needed to execute the skill must be in the SKILL.md file. Agents read the skill, then follow it.
-
+---
+name: skill-name
+description: Brief description for skill matching
+trigger: "/command" | "always"
 ---
 
-## Creating a New Skill
+# Skill Title
 
-### Step 1: Choose a Skill Name
-
-Pick a name that describes the capability:
-- ✅ `analyze-code-patterns`
-- ✅ `restart-service`
-- ❌ `do-stuff`
-- ❌ `helper`
-
-Use kebab-case (lowercase, hyphens).
-
-### Step 2: Create the Directory
-
-```bash
-mkdir -p config/skills/your-skill-name
+Detailed skill instructions for the agent...
 ```
 
-### Step 3: Write SKILL.md
+**Front Matter Fields:**
+- `name` — kebab-case identifier
+- `description` — Used for skill matching (keep under 160 chars)
+- `trigger` — Slash command (`"/model"`), keyword phrase, or `"always"` for auto-load
+
+## Canonical Skills
+
+The following skills are maintained in this repo and deployed to all VMs:
+
+| Skill | Description | Trigger |
+|-------|-------------|---------|
+| `atlas` | Database schema management with Atlas CLI | Atlas migrations, schema diff |
+| `git-extras` | Extended Git operations (rebase, bisect, stash) | Git rebase, squash, cleanup |
+| `maintenance` | VM maintenance commands | `/restart`, `/connect`, `/status` |
+| `model-management` | Model discovery, switching, cost tracking | `/model`, `/model-switch` |
+| `model-preferences` | Model defaults for all roles | Model preferences |
+| `session-commands` | Session control | `/reset`, `/compact`, `/stop` |
+| `viz` | Diagram rendering (Mermaid, Graphviz, Chart.js) | Visualize diagrams |
+
+## Skill Lifecycle
+
+### 1. Create a Skill
+
+Create a new skill directory in `config/skills/`:
 
 ```bash
-cat > config/skills/your-skill-name/SKILL.md << 'EOF'
-# Your Skill Name
-
-One-line description of what this skill does.
-
-## When to Use This Skill
-
-Describe the trigger condition. Example:
-- Use this skill when the user asks to analyze code for patterns
-- Use this skill when you need to compare two files for similarity
-
-## Steps
-
-1. Read the source file
-2. Extract patterns using tool X
-3. Compare against known patterns in the knowledge base
-4. Return results
-
-## Examples
-
-\`\`\`bash
-# Example 1: Analyze a single file
-openclaw analyze patterns.py
-\`\`\`
-
-## Notes
-
-- Requires X tool to be installed
-- Only works on Python files
-- Results are cached for 24 hours
-EOF
+mkdir -p config/skills/my-skill
 ```
 
-### Step 4: Register the Skill (Optional)
+Write `SKILL.md` with front matter + instructions:
 
-If the skill is service-backed (like `viz`), you need a systemd unit and an install script:
-
-```bash
-# Create systemd unit
-cat > etc/systemd/user/openclaw-your-skill.service << 'EOF'
-[Unit]
-Description=OpenClaw Skill: Your Skill
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/path/to/your-skill-server
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-EOF
-
-# Create install script
-cat > scripts/services/install-your-skill-service.sh << 'EOF'
-#!/bin/bash
-set -euo pipefail
-
-echo "Installing your-skill service..."
-mkdir -p ~/.config/systemd/user
-cp etc/systemd/user/openclaw-your-skill.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable openclaw-your-skill.service
-systemctl --user start openclaw-your-skill.service
-EOF
-
-chmod +x scripts/services/install-your-skill-service.sh
-```
-
+```markdown
 ---
+name: my-skill
+description: What this skill does
+trigger: "/mycommand"
+---
+
+# My Skill
+
+When the user runs `/mycommand`:
+1. Do this
+2. Then that
+3. Return result
+```
+
+### 2. Test Locally
+
+Deploy the skill to your local `~/.openclaw/skills/`:
+
+```bash
+rsync -av config/skills/my-skill/ ~/.openclaw/skills/my-skill/
+```
+
+Restart the gateway:
+
+```bash
+systemctl --user restart openclaw-gateway.service
+```
+
+Test the trigger and verify behavior.
+
+### 3. Commit to Repo
+
+Once tested:
+
+```bash
+git add config/skills/my-skill/
+git commit -m "feat(skills): add my-skill for X"
+git push origin main
+```
+
+### 4. Deploy to VMs
+
+Skills are deployed during the standard deploy pipeline. The deploy workflow:
+
+1. Checks out `openclaw-gateway` repo
+2. Copies `config/skills/*` to the target VM's `~/.openclaw/skills/`
+3. Restarts the gateway to load new skills
+
+**Manual deploy** (if needed):
+
+```bash
+ssh target-vm
+cd ~/GithubProjects/openclaw-gateway
+git pull
+rsync -av config/skills/ ~/.openclaw/skills/
+systemctl --user restart openclaw-gateway.service
+```
+
+## Skill Updates
+
+To update an existing skill:
+
+1. Edit `config/skills/<skill-name>/SKILL.md`
+2. Test locally (rsync + restart)
+3. Commit and push
+4. Deploy follows standard pipeline (or manual sync)
+
+## File Permissions
+
+- **Markdown/config files:** `644` (rw-r--r--)
+- **Executable scripts:** `755` (rwxr-xr-x)
+
+Set automatically during sync:
+
+```bash
+find config/skills -type f -name "*.md" -exec chmod 644 {} \;
+find config/skills -type f -name "*.sh" -exec chmod 755 {} \;
+```
+
+## Backend Scripts
+
+Some skills rely on backend scripts installed system-wide. These live in `scripts/` and are deployed to `/usr/local/bin/`:
+
+| Script | Purpose | Used By |
+|--------|---------|---------|
+| `openclaw-model-manager` | Model management CLI | `model-management` skill |
+| `cost-monitor.py` | Cost tracking | `cost-report` skill |
+| `openclaw-catalog-sync.py` | OpenRouter catalog sync | `model-management` skill |
+
+**Deploy backend scripts:**
+
+```bash
+sudo cp scripts/openclaw-model-manager /usr/local/bin/
+sudo chmod 755 /usr/local/bin/openclaw-model-manager
+```
 
 ## Skill Discovery
 
-Agents discover skills in two ways:
+OpenClaw loads skills from two locations:
 
-### 1. Gateway-Level Skills
+1. **Built-in skills:** `/usr/lib/node_modules/openclaw/skills/` (shipped with the package)
+2. **User skills:** `~/.openclaw/skills/` (custom/override skills)
 
-Skills in `config/skills/` are available to all agents automatically. The gateway includes them in the agent's available skills list.
+User skills override built-in skills with the same name.
 
-**How it works:**
-1. Agent starts
-2. Gateway scans `config/skills/`
-3. Reads each `SKILL.md`
-4. Makes skill descriptions available to the agent
-
-### 2. Workspace-Bound Skills
-
-Skills specific to a repo/agent live in the agent's workspace:
-
-```
-~/.openclaw/agents/your-agent/
-└── skills/
-    └── custom-skill/
-        └── SKILL.md
-```
-
-The gateway binds repos to agents via `scripts/openclaw-bind-repos.sh`. If the repo contains skills, they're copied into the agent workspace.
-
----
-
-## Using Skills from Agents
-
-### In Agent Prompts
-
-Skills are loaded into agent context automatically. The agent sees:
-
-```
-Available Skills:
-- session-commands: Manage session state (/reset, /compact, /stop)
-- model-management: Switch models, list available models
-- viz: Render diagrams (Mermaid, Graphviz, Chart.js)
-- your-custom-skill: Your skill description
-```
-
-The agent can then:
-1. Recognize when a skill applies
-2. Read the SKILL.md for the full procedure
-3. Follow the steps
-
-### Example Agent Turn
-
-**User:** "Show me a diagram of the current architecture"
-
-**Agent reasoning:**
-1. Check available skills
-2. Find `viz` skill
-3. Read `config/skills/viz/SKILL.md`
-4. Follow the steps in the skill
-5. Call the viz service with the diagram definition
-6. Return the rendered image to the user
-
----
-
-## Service-Backed Skills
-
-Some skills (like `viz`) require a background service. These skills have:
-
-1. **SKILL.md** — Procedure for agents to follow
-2. **Service code** — The actual implementation (e.g., `config/services/viz/render-server.js`)
-3. **Systemd unit** — Keeps the service running (e.g., `etc/systemd/user/openclaw-viz.service`)
-4. **Install script** — Deploys the service (e.g., `scripts/services/install-viz-service.sh`)
-
-### Service Lifecycle
-
-```mermaid
-graph LR
-    Deploy[Deploy Gateway] --> Install[Install Service]
-    Install --> Start[systemctl start]
-    Start --> Running[Service Running]
-    
-    Agent[Agent Needs Skill] --> ReadSkill[Read SKILL.md]
-    ReadSkill --> CallService[Call Service Endpoint]
-    CallService --> Running
-    Running --> Result[Return Result]
-```
-
-**Example: viz skill**
-
-1. L3a deploys gateway → runs `scripts/services/install-viz-service.sh`
-2. Install script copies systemd unit, runs `systemctl --user enable openclaw-viz`
-3. Service starts on boot: `http://localhost:3456`
-4. Agent reads `config/skills/viz/SKILL.md`
-5. Agent calls `http://localhost:3456/render` with diagram definition
-6. Service returns PNG
-7. Agent sends PNG to user
-
----
-
-## Testing Skills
-
-### Manual Test
+**List loaded skills:**
 
 ```bash
-# Read the skill
-cat config/skills/your-skill/SKILL.md
-
-# Follow the steps manually
-openclaw whatever-the-skill-says
+openclaw skills list
 ```
 
-### Automated Test (BATS)
+## Troubleshooting
 
-```bash
-# Create test file
-cat > tests/your-skill.bats << 'EOF'
-#!/usr/bin/env bats
+### Skill not loading
 
-@test "your-skill: SKILL.md exists" {
-  [ -f "config/skills/your-skill/SKILL.md" ]
-}
+1. Check front matter syntax in `SKILL.md`
+2. Restart gateway: `systemctl --user restart openclaw-gateway.service`
+3. Check logs: `journalctl --user -u openclaw-gateway -f`
 
-@test "your-skill: has required sections" {
-  grep -q "## When to Use This Skill" config/skills/your-skill/SKILL.md
-  grep -q "## Steps" config/skills/your-skill/SKILL.md
-}
+### Skill trigger not matching
 
-@test "your-skill: service responds" {
-  # If service-backed
-  curl -f http://localhost:PORT/health
-}
-EOF
+- Ensure `trigger` in front matter matches expected command or keyword
+- Check skill description length (keep under 160 chars for matching)
 
-chmod +x tests/your-skill.bats
-bats tests/your-skill.bats
-```
+### Permission errors
 
----
+- Verify `SKILL.md` is `644`: `chmod 644 config/skills/*/SKILL.md`
+- Verify scripts are `755`: `chmod 755 scripts/*`
 
 ## Best Practices
 
-### 1. One Skill, One Purpose
+1. **Keep skills focused** — One skill, one responsibility
+2. **Test before commit** — Always test locally first
+3. **Document triggers clearly** — Use descriptive front matter
+4. **Version control everything** — Commit skills to the repo, not just local
+5. **Avoid hardcoded paths** — Use `~/` or relative paths in skill instructions
 
-Each skill should do **one thing well**. Don't create a "do-everything" skill.
+## See Also
 
-**Bad:** `utility-functions` skill with 10 unrelated procedures  
-**Good:** `restart-service` skill that just restarts services
-
-### 2. Self-Contained Instructions
-
-Everything the agent needs must be in SKILL.md. No external dependencies unless explicitly documented.
-
-**Bad:**
-```markdown
-## Steps
-1. Run the script (you know which one)
-2. Check the output
-```
-
-**Good:**
-```markdown
-## Steps
-1. Run: `bash /opt/openclaw-gateway/scripts/check-health.sh`
-2. Expected output: "All systems operational"
-3. If output contains "ERROR", escalate to user
-```
-
-### 3. Clear Trigger Conditions
-
-The "When to Use This Skill" section must be **specific**.
-
-**Bad:**
-```markdown
-## When to Use This Skill
-Use this when you need to do stuff.
-```
-
-**Good:**
-```markdown
-## When to Use This Skill
-Use this skill when:
-- The user explicitly asks to render a diagram
-- You have Mermaid/Graphviz/Chart.js syntax ready
-- The diagram is for Discord (needs PNG output)
-```
-
-### 4. Examples > Prose
-
-Show, don't tell. Include working examples.
-
-**Bad:**
-```markdown
-You can use various flags to customize output.
-```
-
-**Good:**
-```markdown
-\`\`\`bash
-# Render as PNG
-openclaw viz --format png diagram.mmd
-
-# Custom size
-openclaw viz --width 800 --height 600 diagram.dot
-\`\`\`
-```
-
----
-
-## Skill Versioning
-
-Skills are versioned with the gateway. When the gateway is upgraded, skills are upgraded automatically.
-
-**No separate skill versions.** If a skill's behavior changes, document it in the SKILL.md changelog section.
-
----
-
-## Related Documentation
-
-- [architectural-boundaries.md](architectural-boundaries.md) — When to create a skill vs. a tool (mcp-tooling)
-- [workspace-routing.md](workspace-routing.md) — How workspace-bound skills work
-- [viz skill README](../config/services/viz/README.md) — Example service-backed skill
-
----
-
-**End of Document**
+- [AGENTS.md](../AGENTS.md) — Agent behavioral contract
+- [README.md](../README.md) — Repo overview
+- [scripts/](../scripts/) — Backend script implementations
