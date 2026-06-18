@@ -1,7 +1,21 @@
 ---
 name: model-management
 description: Manage AI models for OpenClaw agents. Use when user sends /model, /models, /model-list, /model-search, /model-switch, /model-cost, /model-info, or asks about available models, switching models, model costs, or context usage.
-trigger: "/model"
+commands:
+  - name: model
+    description: List available models
+  - name: model-list
+    description: List all models with details
+  - name: model-search
+    description: Search for models by name or provider
+  - name: model-switch
+    description: Switch to a different model
+  - name: model-cost
+    description: Show model usage costs
+  - name: model-info
+    description: Show detailed info for a model
+  - name: model-current
+    description: Show current active model
 ---
 
 # Model Management

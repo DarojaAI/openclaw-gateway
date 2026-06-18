@@ -1,0 +1,19 @@
+---
+# yamllint config for openclaw-gateway.
+# Matches the seed repo's policy: 2-space indent, 120-char lines,
+# truthy values must be quoted or absent, no duplicate keys, no
+# empty values, no trailing spaces, final newline required.
+extends: default
+rules:
+  line-length:
+    max: 120
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  truthy:
+    level: error
+  key-duplicates: enable
+  empty-values:
+    level: error
+  trailing-spaces: enable
+  new-line-at-end-of-file: enable

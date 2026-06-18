@@ -1,6 +1,21 @@
 ---
 name: model-preferences
 description: "Manage model defaults for every role: main, backup, subagent, compaction, heartbeat, per-agent. Use when setting or showing model preferences for any slot."
+commands:
+  - name: set-defaults
+    description: Set model default for a role (main, backup, subagent, compaction, heartbeat)
+  - name: model-defaults
+    description: Show all model role defaults
+  - name: get-defaults
+    description: Show all model role defaults
+  - name: use-backup
+    description: Switch session to backup model
+  - name: use-compaction
+    description: Show or set compaction model
+  - name: compaction-model
+    description: Show current compaction model
+  - name: subagent-model
+    description: Show subagent model default
 ---
 
 # Model Preferences
