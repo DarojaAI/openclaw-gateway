@@ -12,6 +12,8 @@ Skills in this directory are canonical and deployed to all VMs running OpenClaw.
 
 ```
 config/skills/
+├── model-add/
+│   └── SKILL.md              # Main skill definition (required)
 ├── model-management/
 │   ├── SKILL.md              # Main skill definition (required)
 │   ├── scripts/              # Optional helper scripts
@@ -51,6 +53,7 @@ The following skills are maintained in this repo and deployed to all VMs:
 | `atlas` | Database schema management with Atlas CLI | Atlas migrations, schema diff |
 | `git-extras` | Extended Git operations (rebase, bisect, stash) | Git rebase, squash, cleanup |
 | `maintenance` | VM maintenance commands | `/restart`, `/connect`, `/status` |
+| `model-add` | Add a model to the catalog and open a PR | `/model-add` |
 | `model-management` | Model discovery, switching, cost tracking | `/model`, `/model-switch` |
 | `model-preferences` | Model defaults for all roles | Model preferences |
 | `session-commands` | Session control | `/reset`, `/compact`, `/stop` |
