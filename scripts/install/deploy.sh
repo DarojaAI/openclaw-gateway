@@ -56,6 +56,40 @@ else
     log_warn "Cost monitor not found at $cost_monitor_src"
 fi
 
+# 4b. Install openrouter-provision CLI
+#
+# Why: the seed's configure-openclaw-agent.sh invokes
+# /usr/local/bin/openrouter-provision (the binary this repo ships at
+# scripts/openrouter-provision.py) to mint per-agent child keys.
+# Before this step existed, no install path placed the binary on the
+# VM — the gateway clone put it at /tmp/openclaw-gateway/... but
+# nothing copied it to /usr/local/bin/, so configure-openclaw-agent.sh
+# silently fell back to the shared OPENROUTER_API_KEY on every
+# deploy (incident: linux-desktop-seed run 27833801264).
+#
+# This step makes the install explicit and idempotent. It only
+# touches the CLI binary; the master provisioning key is a separate
+# concern handled by install-openrouter-provisioning.sh (run by hand
+# once, when the key is first minted — see
+# docs/concepts/per-agent-openrouter-keys.md).
+provision_src="$REPO_ROOT/scripts/openrouter-provision.py"
+provision_dst="/usr/local/bin/openrouter-provision"
+if [[ -f "$provision_src" ]]; then
+    if [[ -f "$provision_dst" ]] && cmp -s "$provision_src" "$provision_dst"; then
+        log_info "openrouter-provision already installed and up-to-date"
+    else
+        log_info "Installing openrouter-provision CLI..."
+        # `install -m 0755` sets the executable bit and renames
+        # atomically — preferred over `cp` + `chmod` per the
+        # AGENTS.md deploy-snapshot incident (cp 8.32 fails on
+        # 0400 source/dest under some kernels).
+        install -m 0755 "$provision_src" "$provision_dst"
+        log_info "openrouter-provision CLI installed to $provision_dst"
+    fi
+else
+    log_warn "openrouter-provision source not found at $provision_src"
+fi
+
 # 5. Install shared viz service (mermaid/graphviz/chartjs render server)
 viz_install_src="$REPO_ROOT/scripts/services/install-viz-service.sh"
 if [[ -f "$viz_install_src" ]]; then

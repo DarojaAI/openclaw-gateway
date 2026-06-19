@@ -143,11 +143,35 @@ skipped silently (a "skipped N agent(s)" message goes to stderr
 for the deploy log) — this is what makes `sync` safe to re-run on
 every deploy.
 
-The installer for the master key
-(`scripts/install/install-openrouter-provisioning.sh`) is invoked
-once, by hand, when the master key is first minted. It writes the
-override, sets mode 0600, and reloads the systemd user daemon. It
-is idempotent.
+## Install Paths
+
+There are two distinct artifacts, and they install on different
+schedules:
+
+1. **`openrouter-provision` CLI** (`scripts/openrouter-provision.py`
+   in this repo)
+   - Installed to `/usr/local/bin/openrouter-provision` by
+     `scripts/install/deploy.sh` (step 4b) on every deploy.
+   - Idempotent: the install step skips when the destination file
+     exists and matches the source SHA, so re-running deploy on an
+     unchanged repo is a no-op.
+   - Without this file on the VM, `configure-openclaw-agent.sh`
+     silently fell back to the shared `OPENROUTER_API_KEY` on
+     every deploy (incident: linux-desktop-seed run 27833801264,
+     2026-06-19). The seed's PR #920 turned that fallback into a
+     hard fail, so a missing CLI binary now fails the deploy
+     loudly rather than silently disabling per-agent attribution.
+2. **Master provisioning key** (`OPENROUTER_PROVISIONING_KEY`)
+   - Installed to
+     `~/.config/systemd/user/openclaw-gateway.service.d/override.conf`
+     by `scripts/install/install-openrouter-provisioning.sh`.
+   - Invoked **once, by hand**, when the master key is first
+     minted (or rotated). Not part of the automated deploy
+     pipeline — the master key is sensitive enough to warrant a
+     deliberate operator step rather than CI-driven placement.
+   - Idempotent: re-running with the same key is a no-op;
+     re-running with a different key updates the override.
+   - Sets mode 0600 and reloads the systemd user daemon.
 
 ## Security Model
 
@@ -184,12 +208,15 @@ is idempotent.
 | `OpenRouter API POST /keys failed: HTTP 429` | The provisioning API is rate-limited (default: 10 req/min for new accounts) | Wait, then re-run; or stagger agent provisioning across multiple deploys |
 | `Refusing to re-provision: a key with label=<id> already exists` | The agent was already provisioned (often: a re-deploy) | Expected. The seed's `sync` skips existing agents. If you intentionally want to rotate the key, `revoke --hash <hash>` first |
 | Per-agent `usage_monthly` exceeds `limit` | An agent is over its cap | OpenRouter returns HTTP 402 for any further model call; the agent stops working until the monthly reset. Raise the limit with `provision --agent <id> --limit 50` (after revoking the existing key) |
+| `configure-openclaw-agent.sh` exits with `FATAL: per-agent provisioning required but /usr/local/bin/openrouter-provision not found on the VM` | The deploy shipped without step 4b of `scripts/install/deploy.sh` running — the CLI was never placed on the VM | Re-run the deploy; the install step is idempotent and will place the binary on the next pass. If the deploy keeps failing, check that `scripts/install/deploy.sh` step 4b is present in the gateway repo's HEAD. |
 
 ## Related
 
 - `scripts/openrouter-provision.py` — the CLI
-- `scripts/install/install-openrouter-provisioning.sh` — the master-key installer
-- `tests/openrouter-provision.bats` — the BATS test suite
+- `scripts/install/install-openrouter-provisioning.sh` — the master-key installer (one-time, by hand)
+- `scripts/install/deploy.sh` (step 4b) — installs the CLI to `/usr/local/bin/openrouter-provision` on every deploy
+- `tests/openrouter-provision.bats` — the CLI BATS test suite
+- `tests/install-openrouter-provision-cli.bats` — the install step BATS tests
 - `config/skills/openrouter-provision/SKILL.md` — the
   `/openrouter-provision` Discord skill (provision / list /
   sync-all / revoke)
