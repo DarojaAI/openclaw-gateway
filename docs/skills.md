@@ -117,8 +117,23 @@ git push origin main
 Skills are deployed during the standard deploy pipeline. The deploy workflow:
 
 1. Checks out `openclaw-gateway` repo
-2. Copies `config/skills/*` to the target VM's `~/.openclaw/skills/`
+2. `scripts/install/deploy.sh` runs the **skill-sync phase** (step 6),
+   which copies `config/skills/<name>/SKILL.md` to
+   `~/.openclaw/skills/<name>/SKILL.md` on the target VM. The phase is
+   idempotent: it skips files whose source SHA matches the destination
+   SHA, so re-running deploy.sh on an unchanged repo is a no-op. It also
+   copies the optional `config/skills/<name>/<name>/SKILL.md` companion
+   (the historical "full body" copy paired with the top-level
+   "command manifest") when present.
 3. Restarts the gateway to load new skills
+
+The phase is implemented in `scripts/install/deploy.sh` (look for "step
+6 — install canonical skills"). It honors `$HOME` (so BATS tests can
+sandbox it), uses `install -m 0644` (per AGENTS.md deploy-snapshot
+incident: `cp` against 0400 files fails on `cp 8.32`), and WARNs but
+does not fail on malformed SKILL.md files (missing `name:` frontmatter
+or invalid slug). Behavior is locked down by
+`tests/deploy-skills-sync.bats` (11 cases).
 
 **Manual deploy** (if needed):
 
@@ -126,7 +141,7 @@ Skills are deployed during the standard deploy pipeline. The deploy workflow:
 ssh target-vm
 cd ~/GithubProjects/openclaw-gateway
 git pull
-rsync -av config/skills/ ~/.openclaw/skills/
+bash scripts/install/deploy.sh   # step 6 handles the skill sync
 systemctl --user restart openclaw-gateway.service
 ```
 
