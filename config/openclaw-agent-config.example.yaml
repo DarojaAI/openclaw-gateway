@@ -1,0 +1,33 @@
+# Example .openclaw/agent-config.yaml for the linux-desktop-seed agent.
+#
+# This file validates against schemas/agent-config.schema.json (draft-07).
+# It is the canonical first-consumer example referenced by the agent-config
+# schema's Phase-1 deliverable (RFC issue #31).
+#
+# Fields:
+#   schema_version   - schema revision (currently the string "1")
+#   handle           - lowercase Discord @mention, rename-friendly
+#   handle_id        - UUID v4 minted by gateway at first deploy (lockfile key)
+#   contract_version - contract obligations this agent binds to ("v1")
+#   capabilities     - capability tags advertised for dispatch
+#   allowed_channels - Discord snowflake IDs the agent may be routed into
+#   role             - "executor" (runs actions) or "advisor" (answers only)
+#   heartbeat        - liveness ping config; disabled by default
+#   canary           - if true, agent participates in canary rollout pool
+#   max_bridge_depth - 0 (no bridges) or 1 (single bridge); enforced at gateway
+schema_version: "1"
+handle: "@linux-desktop-seed"
+handle_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+contract_version: "v1"
+capabilities:
+  - vm-provision
+  - vm-decommission
+  - pr-stewardship
+allowed_channels:
+  - "1501612164098687087"
+role: "executor"
+heartbeat:
+  enabled: true
+  interval_hours: 24
+canary: false
+max_bridge_depth: 1
