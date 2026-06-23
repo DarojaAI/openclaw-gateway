@@ -36,3 +36,59 @@ jobs:
           test -f config/skills/model-management/SKILL.md
           test -f config/skills/maintenance/SKILL.md
           test -f config/skills/session-commands/SKILL.md
+
+  bats:
+    name: BATS (agent-config schema + drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats + jsonschema + pyyaml
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq bats
+          python3 -m pip install --break-system-packages jsonschema pyyaml
+
+      - name: Run agent-config schema BATS suites
+        run: |
+          bats tests/agent-config-schema.bats
+          bats tests/agent-config-semantic.bats
+          bats tests/agent-config-schema-drift.bats
+
+      - name: Run all BATS suites (catch any new ones)
+        run: |
+          if compgen -G "tests/*.bats" > /dev/null; then
+            bats tests/*.bats
+          else
+            echo "No tests/*.bats files yet — nothing to run."
+          fi
+
+  openclaw-binary-smoke:
+    name: openclaw binary smoke (drift test prerequisite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install openclaw at pinned version
+        env:
+          PINNED_VERSION: ${{ format('{0}', readFile('config/openclaw-version')) }}
+        run: |
+          if [ -z "${PINNED_VERSION// }" ]; then
+            echo "config/openclaw-version is empty; skipping drift smoke."
+            exit 0
+          fi
+          echo "Pinned version: ${PINNED_VERSION}"
+          sudo npm install -g "openclaw@${PINNED_VERSION}"
+
+      - name: Run schema-drift BATS with binary present
+        run: bats tests/agent-config-schema-drift.bats
+
+      - name: Verify binary version matches pin
+        run: |
+          PINNED="$(cat config/openclaw-version)"
+          INSTALLED="$(openclaw --version 2>&1 | head -1)"
+          echo "pinned=${PINNED} installed=${INSTALLED}"
+          case "${INSTALLED}" in
+            "${PINNED}"*) echo "OK: pin matches binary"; exit 0 ;;
+            *) echo "FAIL: pin ${PINNED} does not match installed ${INSTALLED}"; exit 1 ;;
+          esac

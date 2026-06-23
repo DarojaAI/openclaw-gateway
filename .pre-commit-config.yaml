@@ -43,3 +43,18 @@ repos:
     rev: v8.18.0
     hooks:
       - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: bats-agent-config
+        name: bats (agent-config schema + drift)
+        description: |
+          Run the agent-config BATS suites against any staged BATS / schema /
+          example-yaml / version-pin changes. Fails locally before CI does,
+          matching the linux-desktop-seed pre-commit + bats pattern. Skips
+          gracefully when no relevant files are staged or when bats /
+          jsonschema / pyyaml are not installed locally.
+        entry: scripts/ci/run-agent-config-bats.sh
+        language: system
+        pass_filenames: false
+        files: ^(tests/agent-config-.*\.bats|schemas/agent-config\.schema\.json|config/openclaw-agent-config\.example\.yaml|config/openclaw-version)$
