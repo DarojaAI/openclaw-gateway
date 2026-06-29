@@ -186,4 +186,60 @@ else
     log_warn "Skills source dir not found: $skills_src_root (skipping skill sync)"
 fi
 
+# 7. Install lane-health watchdog (user systemd timer).
+#
+# Why: upstream openclaw@2026.6.8 does not preempt wedged model_call
+# lanes. The watchdog scans the journal every 30s and kills lanes that
+# exceed the wall-clock budget. See
+# docs/incidents/2026-06-28-multi-session-gateway-starvation.md in
+# DarojaAI/linux-desktop-seed.
+#
+# Behavior:
+#   - Honors $HOME for sandbox tests.
+#   - Skipped if --no-lane-health-probe arg was passed to deploy.sh.
+#   - Operator-channel is read from $OPENCLAW_OPERATOR_CHANNEL if set.
+lane_health_installer="$REPO_ROOT/scripts/install/install-lane-health-probe.sh"
+if [[ -f "$lane_health_installer" ]] && [[ "${SKIP_LANE_HEALTH_PROBE:-0}" != "1" ]]; then
+    install_args=()
+    if [[ -n "${OPENCLAW_OPERATOR_CHANNEL:-}" ]]; then
+        install_args+=(--operator-channel "$OPENCLAW_OPERATOR_CHANNEL")
+    fi
+    if bash "$lane_health_installer" "${install_args[@]}"; then
+        log_info "Lane-health probe installed"
+    else
+        log_warn "Lane-health probe install failed (non-fatal; deploy continues)"
+    fi
+else
+    log_warn "Lane-health probe installer not found or skipped"
+fi
+
+# 8. Post-deploy lane-health verification.
+#
+# Why: refuse to declare a deploy healthy if any lane is currently
+# wedged. The L3 deploy pipeline invokes this script; failing the gate
+# forces the operator to restart cleanly.
+#
+# Behavior:
+#   - Reads gateway user journal for last 60s.
+#   - Exits non-zero if any `long-running session` event has age > budget
+#     and recovery=none.
+#   - Skipped if --skip-lane-health-check or $SKIP_POST_DEPLOY_LANE_CHECK=1.
+if [[ "${SKIP_POST_DEPLOY_LANE_CHECK:-0}" != "1" ]]; then
+    lane_check="$REPO_ROOT/scripts/post-deploy-verify-lane-health.sh"
+    if [[ -f "$lane_check" ]]; then
+        if bash "$lane_check"; then
+            log_info "Post-deploy lane-health check passed"
+        else
+            rc=$?
+            log_error "Post-deploy lane-health check FAILED (rc=$rc)"
+            log_error "Refusing to declare deploy healthy. Remediate, then re-run."
+            exit "$rc"
+        fi
+    else
+        log_warn "Post-deploy lane-health check not found at $lane_check"
+    fi
+else
+    log_warn "Post-deploy lane-health check skipped (SKIP_POST_DEPLOY_LANE_CHECK=1)"
+fi
+
 log_info "OpenClaw Gateway installation complete"
