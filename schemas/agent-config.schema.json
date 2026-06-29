@@ -1,80 +1,62 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/DarojaAI/openclaw-gateway/schemas/agent-config.schema.json",
-  "title": "OpenClaw Agent Config",
-  "description": "JSON Schema (draft-07) for per-agent `.openclaw/agent-config.yaml` files. Consumed by the gateway's lockfile generator to mint a stable handle_id -> capabilities binding and to enforce the v1 contract (single-turn bridge, capability-based dispatch, allowed_channels gating, heartbeat liveness, max_bridge_depth=1). The schema is intentionally permissive on optional fields so v1 agents can opt out of features (heartbeat, canary) they do not need.",
+  "title": "OpenClaw agent-config.yaml",
+  "description": "Per-agent identity, capability, and channel-binding declaration. Consumed by the openclaw-gateway deploy action to generate agents.lock.toml.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "handle", "handle_id", "contract_version", "capabilities"],
+  "required": ["handle", "contract_version"],
   "properties": {
-    "schema_version": {
-      "const": "1",
-      "description": "Schema revision of this file. Currently the string \"1\". Bumped together with contract_version when shape changes."
-    },
     "handle": {
       "type": "string",
-      "pattern": "^@[a-z0-9][a-z0-9-]{1,62}$",
-      "description": "Lowercase Discord @mention. Rename-friendly — see handle_id."
-    },
-    "handle_id": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
-      "description": "UUID v4 minted by gateway at first deploy. Lockfile key, not handle."
+      "description": "Discord @-mention used in chat. Must start with @.",
+      "pattern": "^@[a-z0-9]([a-z0-9._-]*[a-z0-9])?$"
     },
     "contract_version": {
-      "enum": ["v1"],
-      "description": "Contract obligations this agent binds to. Currently \"v1\"; v2 requires a written migration in docs/contracts/v2.md."
+      "type": "string",
+      "description": "Inter-agent protocol version this agent obeys.",
+      "enum": ["v1"]
     },
     "capabilities": {
       "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[a-z][a-z0-9-]{1,62}$"
-      },
-      "uniqueItems": true,
-      "minItems": 1,
-      "description": "Capability tags this agent advertises for dispatch when @handle is omitted."
+      "description": "Declared capabilities this agent serves.",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+      "uniqueItems": true
     },
     "allowed_channels": {
       "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[0-9]{17,20}$"
-      },
-      "uniqueItems": true,
-      "description": "Discord snowflake IDs (17-20 digits) the agent may be routed into. Rejected outside the set; dry-run logs, enforcement refuses."
+      "description": "Discord channels where this agent may receive direct @-mentions.",
+      "items": { "type": "string", "pattern": "^#?[a-z0-9][a-z0-9_-]*$" },
+      "uniqueItems": true
     },
     "role": {
-      "enum": ["executor", "advisor"],
-      "description": "Agent role: 'executor' runs actions, 'advisor' answers only."
+      "type": "string",
+      "description": "Agent role.",
+      "enum": ["executor", "advisor"]
+    },
+    "skills": {
+      "type": "array",
+      "description": "Skill names this agent declares it can serve.",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+      "uniqueItems": true
     },
     "heartbeat": {
       "type": "object",
-      "required": ["enabled"],
+      "description": "Heartbeat configuration. Phase 6 health/quarantine.",
       "additionalProperties": false,
+      "required": ["enabled", "interval_hours"],
       "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Whether the gateway should ping this agent on interval_hours."
-        },
+        "enabled": { "type": "boolean" },
         "interval_hours": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 168,
-          "description": "Heartbeat interval in hours (1-168, i.e. 1h-1week)."
+          "maximum": 168
         }
-      },
-      "description": "Heartbeat configuration. If enabled, gateway pings every interval_hours and quarantines the agent after 2 missed pongs."
+      }
     },
     "canary": {
       "type": "boolean",
-      "description": "If true, this agent participates in the canary rollout pool."
-    },
-    "max_bridge_depth": {
-      "type": "integer",
-      "enum": [0, 1],
-      "default": 1,
-      "description": "Maximum @A ask @B bridge depth this agent accepts (0 = no bridges, 1 = single bridge). Enforced at gateway, not agent policy."
+      "description": "If true, the gateway routes ~10% of traffic here."
     }
   }
 }
