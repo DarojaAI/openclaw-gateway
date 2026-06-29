@@ -242,4 +242,54 @@ else
     log_warn "Post-deploy lane-health check skipped (SKIP_POST_DEPLOY_LANE_CHECK=1)"
 fi
 
+# 9. Post-deploy memory-index verification.
+#
+# Why: a freshly-deployed gateway can be "up" while the memory index
+# is broken (DarojaAI/openclaw-gateway#21). The upstream OpenClaw
+# runtime does not detect a missing or mismatched indexIdentity at
+# boot — the disable message only surfaces when an agent calls
+# memory_search. Failing the deploy gate forces the operator to
+# rebuild the index (`openclaw memory index --force`) before the
+# deploy is considered healthy.
+#
+# Upstream openclaw/openclaw owns the underlying race fix
+# (PR #90453); this script is the L3b-side detection and
+# deploy-gate integration. Upstream fix is the durable resolution;
+# this gate catches future regressions of the same shape.
+#
+# Behavior:
+#   - Reads `openclaw memory status --json` and inspects per-agent
+#     indexIdentity.
+#   - Exit 0 → OK, log and continue.
+#   - Exit 1 → degraded index on an agent that has data; FAIL the
+#     deploy gate (log_error + exit 1).
+#   - Exit 2 → probe failure (openclaw not on PATH, JSON parse error).
+#     Log a warning and continue — we don't want a missing CLI to
+#     block deploys.
+#   - Skipped when SKIP_POST_DEPLOY_MEMORY_CHECK=1.
+#   - Skipped when the verify script is not present (still
+#     soft-warns so the operator knows the gate is not running).
+memory_check="$REPO_ROOT/scripts/post-deploy-verify-memory-index.sh"
+if [[ "${SKIP_POST_DEPLOY_MEMORY_CHECK:-0}" == "1" ]]; then
+    log_warn "Post-deploy memory-index check skipped (SKIP_POST_DEPLOY_MEMORY_CHECK=1)"
+elif [[ -f "$memory_check" ]]; then
+    # Capture rc explicitly; do not let `set -e` abort on exit 1 (the
+    # script's documented "deploy gate fails" exit code).
+    set +e
+    "$memory_check"
+    rc=$?
+    set -e
+    if [[ $rc -eq 0 ]]; then
+        log_info "Post-deploy memory-index check passed"
+    elif [[ $rc -eq 1 ]]; then
+        log_error "Post-deploy memory-index check FAILED (rc=$rc) — deploy gate refuses to declare this deploy healthy."
+        log_error "Remediation: openclaw memory index --force (or /memory-rebuild from Discord), then re-run the deploy."
+        exit 1
+    else
+        log_warn "Post-deploy memory-index check exited $rc (probe failure) — continuing deploy"
+    fi
+else
+    log_warn "Post-deploy memory-index check not found at $memory_check"
+fi
+
 log_info "OpenClaw Gateway installation complete"
