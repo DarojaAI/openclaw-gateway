@@ -1,0 +1,8 @@
+# agents.lock.toml — Auto-generated lockfile for agent deployments.
+#
+# This file is maintained by the deploy pipeline. Do not edit manually.
+# Changes are made by scripts/ci/merge-agents-lock.py during each deploy.
+#
+# Refs: DarojaAI/openclaw-gateway#31
+
+schema_version = "1"
