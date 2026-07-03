@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""
+Parse bridge syntax @A ask @B <question> and emit a JSON routing decision.
+
+Usage:
+    python3 scripts/bridge-syntax.py <message> [path/to/agents.lock.toml]
+
+Exit codes:
+    0  — success (JSON routing decision on stdout)
+    1  — malformed syntax or unknown agent
+    2  — lockfile missing or parse error
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Minimal TOML parser — same subset as load-agents-lock.py.
+# ---------------------------------------------------------------------------
+
+KV_RE = re.compile(r'^([A-Za-z0-9_\-]+)\s*=\s*(.+)$')
+SECTION_RE = re.compile(r'^\[([A-Za-z0-9_\-\.]+)\]$')
+STRING_RE = re.compile(r'^"(.*)"$')
+INT_RE = re.compile(r'^-?\d+$')
+
+
+def _parse_toml_value(raw: str) -> Any:
+    raw = raw.strip()
+    if raw == "true":
+        return True
+    if raw == "false":
+        return False
+    m = STRING_RE.match(raw)
+    if m:
+        return m.group(1)
+    if INT_RE.match(raw):
+        return int(raw)
+    raise ValueError(f"unrecognised TOML value: {raw!r}")
+
+
+def _parse_toml(text: str) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    current: dict[str, Any] | None = None
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = SECTION_RE.match(stripped)
+        if m:
+            parts = m.group(1).split(".")
+            obj = result
+            for part in parts:
+                obj = obj.setdefault(part, {})
+            current = obj
+            continue
+        m = KV_RE.match(stripped)
+        if m:
+            key = m.group(1)
+            raw_val = m.group(2)
+            val = _parse_toml_value(raw_val)
+            if current is None:
+                result[key] = val
+            else:
+                current[key] = val
+            continue
+        raise ValueError(f"line {lineno}: unrecognised syntax: {stripped!r}")
+    return result
+
+
+def load_agents_lock(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    try:
+        return _parse_toml(text)
+    except ValueError as exc:
+        print(f"ERROR: TOML parse error in {path}: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+
+
+# ---------------------------------------------------------------------------
+# Bridge syntax
+# ---------------------------------------------------------------------------
+
+# Matches: @source ask @target <rest>
+BRIDGE_RE = re.compile(
+    r'^@([A-Za-z0-9_-]+)\s+ask\s+@([A-Za-z0-9_-]+)\s+(.+)$'
+)
+
+
+def parse_bridge_syntax(message: str) -> tuple[str, str, str]:
+    """
+    Parse bridge syntax from a message string.
+
+    Returns (source_handle, target_handle, question).
+
+    Raises ValueError on malformed syntax.
+    """
+    m = BRIDGE_RE.match(message.strip())
+    if not m:
+        raise ValueError(
+            f"malformed bridge syntax: expected @A ask @B <question>, "
+            f"got {message!r}"
+        )
+    source = m.group(1)
+    target = m.group(2)
+    question = m.group(3).strip()
+    return f"@{source}", f"@{target}", question
+
+
+def resolve_agent(
+    handle: str,
+    registry: dict[str, Any],
+    lockfile_path: Path,
+) -> dict[str, Any]:
+    """
+    Look up an agent handle in the registry.
+
+    Returns the agent entry dict if found. Raises ValueError if unknown.
+    """
+    agents = registry.get("agents", {})
+    # Match on the "handle" field, not the TOML key (which may use
+    # underscores while the handle uses hyphens).
+    for _slug, agent in agents.items():
+        agent_handle = agent.get("handle", "")
+        if agent_handle == handle:
+            return agent
+    raise ValueError(
+        f"unknown agent {handle!r} in lockfile {lockfile_path}"
+    )
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print(
+            "Usage: bridge-syntax.py <message> [path/to/agents.lock.toml]",
+            file=sys.stderr,
+        )
+        return 1
+
+    message = sys.argv[1]
+    lockfile_path = (
+        Path(sys.argv[2]) if len(sys.argv) > 2
+        else Path("config/agents.lock.toml")
+    ).expanduser().resolve()
+
+    # 1. Parse the syntax
+    try:
+        source_handle, target_handle, question = parse_bridge_syntax(message)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    # 2. Load lockfile
+    registry = load_agents_lock(lockfile_path)
+    if not registry:
+        print(
+            f"ERROR: lockfile not found or empty: {lockfile_path}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # 3. Resolve both agents
+    try:
+        source_agent = resolve_agent(source_handle, registry, lockfile_path)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        target_agent = resolve_agent(target_handle, registry, lockfile_path)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    # 4. Emit routing decision
+    routing = {
+        "source_agent": {
+            "handle": source_handle,
+            "slug": source_handle.lstrip("@"),
+            "repo": source_agent.get("repo", ""),
+        },
+        "target_agent": {
+            "handle": target_handle,
+            "slug": target_handle.lstrip("@"),
+            "repo": target_agent.get("repo", ""),
+        },
+        "question": question,
+        "bridge_syntax": message.strip(),
+    }
+    print(json.dumps(routing, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
