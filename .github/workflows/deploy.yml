@@ -1,0 +1,164 @@
+---
+# =============================================================================
+# Gateway Deploy — RFC #31 Phase 2: Lockfile merge + gateway restart
+# =============================================================================
+# This workflow is triggered by the linux-desktop-seed deploy after
+# it generates agents.lock.next.toml fragments. It merges the
+# fragments into agents.lock.toml, commits to the gateway repo,
+# and restarts the gateway.
+#
+# Required secrets:
+#   SSH_PRIVATE_KEY          - Private key for SSH access to the VM
+#
+# Required variables:
+#   SERVER_IP                - Server IP address
+#   SERVER_USER              - SSH user (default: desktopuser)
+# =============================================================================
+
+name: Gateway Deploy - Lockfile Merge
+
+"on":
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: environment
+      fragment-paths:
+        description: 'Comma-separated list of lockfile fragment paths (on VM)'
+        required: false
+        default: '/tmp/agents.lock.next.toml'
+        type: string
+      commit-message:
+        description: 'Commit message for lockfile update'
+        required: false
+        default: 'chore(lockfile): update agents.lock.toml'
+        type: string
+      skip-restart:
+        description: 'Skip gateway restart after lockfile update'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  REPO_PATH: /home/desktopuser/GithubProjects/openclaw-gateway
+
+jobs:
+  merge-lockfile:
+    name: Merge Lockfile Fragments
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout gateway repo
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate merge script exists
+        run: |
+          if [ ! -f scripts/ci/merge-agents-lock.py ]; then
+            echo "::error::merge script not found at scripts/ci/merge-agents-lock.py"
+            exit 1
+          fi
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Create temp fragments dir
+        id: fragments
+        run: |
+          FRAGMENTS_DIR=$(mktemp -d /tmp/lockfile-fragments-XXXX)
+          echo "dir=${FRAGMENTS_DIR}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download fragments from VM
+        run: |
+          FRAGMENTS_DIR="${{ steps.fragments.outputs.dir }}"
+          SSH_HOST="${{ env.SERVER_IP }}"
+          SSH_USER="${{ env.SERVER_USER || 'desktopuser' }}"
+
+          # Copy lockfile fragments from VM
+          IFS=',' read -ra FRAGMENT_PATHS <<< "${{ github.event.inputs.fragment-paths }}"
+          for FRAG_PATH in "${FRAGMENT_PATHS[@]}"; do
+            FRAG_PATH=$(echo "$FRAG_PATH" | xargs)  # trim whitespace
+            echo "Downloading fragment: ${FRAG_PATH}"
+            scp -o StrictHostKeyChecking=no \
+              "${SSH_USER}@${SSH_HOST}:${FRAG_PATH}" \
+              "${FRAGMENTS_DIR}/$(basename "${FRAG_PATH}")" || {
+              echo "::warning::Failed to download ${FRAG_PATH}; skipping"
+              continue
+            }
+          done
+
+          echo "Downloaded fragments:"
+          ls -la "${FRAGMENTS_DIR}/"
+
+      - name: Merge fragments into agents.lock.toml
+        id: merge
+        run: |
+          FRAGMENTS_DIR="${{ steps.fragments.outputs.dir }}"
+          OUTPUT_PATH="agents.lock.toml"
+
+          python3 scripts/ci/merge-agents-lock.py \
+            --fragments-dir "${FRAGMENTS_DIR}" \
+            --output "${OUTPUT_PATH}"
+
+          echo "Merged lockfile:"
+          cat "${OUTPUT_PATH}"
+
+          # Record the output path for commit step
+          echo "output-path=${OUTPUT_PATH}" >> "${GITHUB_OUTPUT}"
+
+      - name: Commit lockfile to gateway repo
+        run: |
+          OUTPUT_PATH="${{ steps.merge.outputs.output-path }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "${OUTPUT_PATH}"
+          if git diff --cached --quiet; then
+            echo "No changes to commit; lockfile already up-to-date"
+          else
+            git commit -m "${{ github.event.inputs.commit-message }}"
+            git push origin main
+            echo "Lockfile committed and pushed to main"
+          fi
+
+      - name: Restart gateway
+        if: ${{ github.event.inputs.skip-restart != 'true' }}
+        run: |
+          SSH_HOST="${{ env.SERVER_IP }}"
+          SSH_USER="${{ env.SERVER_USER || 'desktopuser' }}"
+
+          echo "Restarting gateway..."
+          ssh -o StrictHostKeyChecking=no \
+            "${SSH_USER}@${SSH_HOST}" \
+            'systemctl --user restart openclaw-gateway.service 2>&1 || true' &
+          SSH_PID=$!
+          wait $SSH_PID
+
+          echo "Gateway restart initiated"
+
+          # Wait for gateway to come back up
+          sleep 10
+
+          echo "Gateway restart complete"
+
+      - name: Cleanup temp directory
+        if: always()
+        run: |
+          rm -rf "${{ steps.fragments.outputs.dir }}"

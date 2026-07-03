@@ -1,6 +1,7 @@
+---
 name: Validate
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
@@ -18,12 +19,18 @@ jobs:
           if compgen -G "scripts/install/*.py" > /dev/null; then
             python3 -m py_compile scripts/install/*.py
           fi
+          if compgen -G "scripts/ci/*.py" > /dev/null; then
+            python3 -m py_compile scripts/ci/*.py
+          fi
 
       - name: Validate Bash syntax
         run: |
           bash -n scripts/*.sh scripts/remote/*.sh
           if compgen -G "scripts/install/*.sh" > /dev/null; then
             bash -n scripts/install/*.sh
+          fi
+          if compgen -G "scripts/ci/*.sh" > /dev/null; then
+            bash -n scripts/ci/*.sh
           fi
 
       - name: Validate JSON config
