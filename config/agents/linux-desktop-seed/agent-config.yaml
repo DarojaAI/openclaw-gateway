@@ -1,0 +1,13 @@
+handle: "@linux-desktop-seed"
+contract_version: "v1"
+capabilities:
+  - vm-provision
+  - vm-decommission
+  - pr-stewardship
+allowed_channels:
+  - "1501612164098687087"
+role: "executor"
+heartbeat:
+  enabled: true
+  interval_hours: 24
+canary: false

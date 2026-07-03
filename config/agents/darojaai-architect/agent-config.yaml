@@ -1,0 +1,13 @@
+handle: "@darojaai-architect"
+contract_version: "v1"
+capabilities:
+  - architecture
+  - code-review
+  - design-patterns
+allowed_channels:
+  - "1501612164098687087"
+role: "advisor"
+heartbeat:
+  enabled: true
+  interval_hours: 24
+canary: false
