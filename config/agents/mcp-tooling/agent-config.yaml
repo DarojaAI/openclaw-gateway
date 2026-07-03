@@ -1,0 +1,12 @@
+handle: "@mcp-tooling"
+contract_version: "v1"
+capabilities:
+  - mcp-server
+  - tool-management
+allowed_channels:
+  - "1501612164098687087"
+role: "executor"
+heartbeat:
+  enabled: true
+  interval_hours: 24
+canary: false
