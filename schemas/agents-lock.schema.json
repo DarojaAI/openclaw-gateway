@@ -55,6 +55,34 @@
               "type": "string",
               "format": "date-time",
               "description": "ISO 8601 timestamp the deploy action compiled this entry."
+            },
+            "capabilities": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "List of capability identifiers this agent can handle. Used by capability-based dispatch."
+            },
+            "role": {
+              "type": "string",
+              "enum": ["executor", "advisor", "observer"],
+              "description": "Agent role: executor performs actions, advisor reviews, observer monitors."
+            },
+            "allowed_channels": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Discord channel IDs this agent is allowed to operate in."
+            },
+            "heartbeat": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "interval_hours": { "type": "integer", "minimum": 1 }
+              },
+              "description": "Heartbeat configuration for agent health monitoring."
+            },
+            "canary": {
+              "type": "boolean",
+              "description": "Whether this agent is in canary (partial rollout) mode."
             }
           }
         }

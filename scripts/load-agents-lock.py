@@ -13,100 +13,13 @@ Exit codes:
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
-from typing import Any
 
 # ---------------------------------------------------------------------------
-# Minimal TOML parser — handles the subset used by agents.lock.toml:
-#   - schema_version = "1"
-#   - [agents.<slug>]
-#     key = "string" | 42 | true | false
-#
-# No external dependencies.
+# Import shared TOML parser from _agents_lock.py
 # ---------------------------------------------------------------------------
-
-# Regex for key = value lines
-KV_RE = re.compile(r'^([A-Za-z0-9_\-]+)\s*=\s*(.+)$')
-# Regex for section headers like [agents.slug]
-SECTION_RE = re.compile(r'^\[([A-Za-z0-9_\-\.]+)\]$')
-# Regex for string values
-STRING_RE = re.compile(r'^"(.*)"$')
-# Regex for integer values
-INT_RE = re.compile(r'^-?\d+$')
-
-
-def _parse_toml_value(raw: str) -> Any:
-    """Parse a single TOML scalar value (string, int, bool)."""
-    raw = raw.strip()
-    # Bool
-    if raw == "true":
-        return True
-    if raw == "false":
-        return False
-    # String (basic or literal)
-    m = STRING_RE.match(raw)
-    if m:
-        return m.group(1)
-    # Integer
-    if INT_RE.match(raw):
-        return int(raw)
-    raise ValueError(f"unrecognised TOML value: {raw!r}")
-
-
-def _parse_toml(text: str) -> dict[str, Any]:
-    """
-    Parse a minimal TOML document into a dict.
-    Only handles top-level keys and [section.key] tables with scalar values.
-    """
-    result: dict[str, Any] = {}
-    current: dict[str, Any] | None = None
-    for lineno, line in enumerate(text.splitlines(), 1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        # Section header
-        m = SECTION_RE.match(stripped)
-        if m:
-            parts = m.group(1).split(".")
-            obj = result
-            for part in parts:
-                obj = obj.setdefault(part, {})
-            current = obj
-            continue
-        # Key = value
-        m = KV_RE.match(stripped)
-        if m:
-            key = m.group(1)
-            raw_val = m.group(2)
-            val = _parse_toml_value(raw_val)
-            if current is None:
-                result[key] = val
-            else:
-                current[key] = val
-            continue
-        raise ValueError(f"line {lineno}: unrecognised syntax: {stripped!r}")
-    return result
-
-
-def load_agents_lock(path: Path) -> dict[str, Any]:
-    """
-    Load and parse agents.lock.toml. Returns empty dict if file is missing.
-    Raises SystemExit(2) on parse error.
-    """
-    if not path.exists():
-        return {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
-        raise SystemExit(2) from exc
-    try:
-        return _parse_toml(text)
-    except ValueError as exc:
-        print(f"ERROR: TOML parse error in {path}: {exc}", file=sys.stderr)
-        raise SystemExit(2) from exc
+from _agents_lock import load_agents_lock
 
 
 def main() -> int:
