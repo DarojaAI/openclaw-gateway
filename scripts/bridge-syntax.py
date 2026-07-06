@@ -20,71 +20,9 @@ from pathlib import Path
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# Minimal TOML parser — same subset as load-agents-lock.py.
+# Import shared TOML parser from _agents_lock.py
 # ---------------------------------------------------------------------------
-
-KV_RE = re.compile(r'^([A-Za-z0-9_\-]+)\s*=\s*(.+)$')
-SECTION_RE = re.compile(r'^\[([A-Za-z0-9_\-\.]+)\]$')
-STRING_RE = re.compile(r'^"(.*)"$')
-INT_RE = re.compile(r'^-?\d+$')
-
-
-def _parse_toml_value(raw: str) -> Any:
-    raw = raw.strip()
-    if raw == "true":
-        return True
-    if raw == "false":
-        return False
-    m = STRING_RE.match(raw)
-    if m:
-        return m.group(1)
-    if INT_RE.match(raw):
-        return int(raw)
-    raise ValueError(f"unrecognised TOML value: {raw!r}")
-
-
-def _parse_toml(text: str) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    current: dict[str, Any] | None = None
-    for lineno, line in enumerate(text.splitlines(), 1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        m = SECTION_RE.match(stripped)
-        if m:
-            parts = m.group(1).split(".")
-            obj = result
-            for part in parts:
-                obj = obj.setdefault(part, {})
-            current = obj
-            continue
-        m = KV_RE.match(stripped)
-        if m:
-            key = m.group(1)
-            raw_val = m.group(2)
-            val = _parse_toml_value(raw_val)
-            if current is None:
-                result[key] = val
-            else:
-                current[key] = val
-            continue
-        raise ValueError(f"line {lineno}: unrecognised syntax: {stripped!r}")
-    return result
-
-
-def load_agents_lock(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
-        raise SystemExit(2) from exc
-    try:
-        return _parse_toml(text)
-    except ValueError as exc:
-        print(f"ERROR: TOML parse error in {path}: {exc}", file=sys.stderr)
-        raise SystemExit(2) from exc
+from _agents_lock import load_agents_lock
 
 
 # ---------------------------------------------------------------------------

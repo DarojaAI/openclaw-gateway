@@ -7,6 +7,12 @@ contract_version = "v1"
 config_source    = "https://github.com/DarojaAI/darojaai_architect/blob/main/.openclaw/agent-config.yaml"
 config_sha       = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
 loop_guard       = true
+capabilities     = ["architecture", "code-review", "design-patterns"]
+role             = "advisor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
 
 [agents.linux-desktop-seed]
 repo             = "DarojaAI/linux-desktop-seed"
@@ -15,6 +21,12 @@ contract_version = "v1"
 config_source    = "https://github.com/DarojaAI/linux-desktop-seed/blob/main/.openclaw/agent-config.yaml"
 config_sha       = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 loop_guard       = true
+capabilities     = ["vm-provision", "vm-decommission", "pr-stewardship"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
 
 [agents.mcp-tooling]
 repo             = "DarojaAI/mcp-tooling"
@@ -23,6 +35,12 @@ contract_version = "v1"
 config_source    = "https://github.com/DarojaAI/mcp-tooling/blob/main/.openclaw/agent-config.yaml"
 config_sha       = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
 loop_guard       = true
+capabilities     = ["mcp-server", "tool-management"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
 
 [agents.openclaw-gateway]
 repo             = "DarojaAI/openclaw-gateway"
@@ -31,3 +49,9 @@ contract_version = "v1"
 config_source    = "https://github.com/DarojaAI/openclaw-gateway/blob/main/.openclaw/agent-config.yaml"
 config_sha       = "f0e1d2c3b4a5f0e1d2c3b4a5f0e1d2c3b4a5f0e1"
 loop_guard       = true
+capabilities     = ["gateway", "orchestration"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false

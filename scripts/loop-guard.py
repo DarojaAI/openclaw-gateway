@@ -14,64 +14,16 @@ import argparse
 import json
 import os
 import sys
+from _agents_lock import load_agents_lock
 
 
 def load_lockfile(path: str) -> dict:
-    """Load agents.lock.toml as a simple key-value parser."""
-    try:
-        with open(path) as f:
-            return _parse_toml(f.read())
-    except FileNotFoundError:
-        return {}
+    """Load agents.lock.toml via shared parser."""
+    from pathlib import Path
+    return load_agents_lock(Path(path))
 
 
-def _parse_toml(content: str) -> dict:
-    """Minimal TOML parser for agents.lock.toml structure.
 
-    Handles [agents.<slug>] sections and key = "value" lines.
-    Returns nested dict: agents -> slug -> {key: value}
-    """
-    result = {}
-    current_section = None
-    current_subsection = None
-
-    for line in content.splitlines():
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-
-        # Handle section headers like [agents.linux-desktop-seed]
-        if line.startswith('[') and line.endswith(']'):
-            section_name = line[1:-1].strip()
-            parts = section_name.split('.')
-            if len(parts) == 2:
-                current_section = parts[0]
-                current_subsection = parts[1]
-                if current_section not in result:
-                    result[current_section] = {}
-                if current_subsection not in result[current_section]:
-                    result[current_section][current_subsection] = {}
-            else:
-                current_section = section_name
-                current_subsection = None
-                if current_section not in result:
-                    result[current_section] = {}
-            continue
-
-        # Handle key = "value" or key = true/false
-        if '=' in line and current_section is not None:
-            key, _, val = line.partition('=')
-            key = key.strip()
-            val = val.strip().strip('"')
-
-            if val.lower() in ('true', 'false'):
-                val = val.lower() == 'true'
-            if current_subsection is not None:
-                result[current_section][current_subsection][key] = val
-            else:
-                result[current_section][key] = val
-
-    return result
 
 
 def check_loop_guard(source: str, target: str, agents: dict) -> bool:
