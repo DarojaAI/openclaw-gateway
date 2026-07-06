@@ -5,16 +5,24 @@
 # schema's Phase-1 deliverable (RFC issue #31).
 #
 # Fields:
-#   schema_version   - schema revision (currently the string "1")
-#   handle           - lowercase Discord @mention, rename-friendly
-#   handle_id        - UUID v4 minted by gateway at first deploy (lockfile key)
-#   contract_version - contract obligations this agent binds to ("v1")
-#   capabilities     - capability tags advertised for dispatch
-#   allowed_channels - Discord snowflake IDs the agent may be routed into
-#   role             - "executor" (runs actions) or "advisor" (answers only)
-#   heartbeat        - liveness ping config; disabled by default
-#   canary           - if true, agent participates in canary rollout pool
-#   max_bridge_depth - 0 (no bridges) or 1 (single bridge); enforced at gateway
+#   schema_version            - schema revision (currently the string "1")
+#   handle                    - lowercase Discord @mention, rename-friendly
+#   handle_id                 - UUID v4 minted by gateway at first deploy (lockfile key)
+#   contract_version          - contract obligations this agent binds to ("v1")
+#   capabilities              - capability tags advertised for dispatch
+#   allowed_channels          - Discord snowflake IDs the agent may be routed into
+#   role                      - "executor" (runs actions) or "advisor" (answers only)
+#   heartbeat                 - liveness ping config; disabled by default
+#   canary                    - if true, agent participates in canary rollout pool
+#   max_bridge_depth          - 0 (no bridges) or 1 (single bridge); enforced at gateway
+#   dry_run                   - channel pinning in dry-run mode (default true, RFC #31 #48)
+#   enforce_channel_pinning   - block on channel pinning violations (default false, RFC #31 #47)
+#
+# Channel pinning (RFC #31 Phase 5, Issues #47/#48):
+#   By default (dry_run: true, enforce_channel_pinning: false), channel pinning
+#   violations are logged to stderr but do NOT block routing. After a 1-week
+#   dry-run window, set dry_run: false + enforce_channel_pinning: true to
+#   actually block violations (gateway exits 4 with no stdout routing decision).
 schema_version: "1"
 handle: "@linux-desktop-seed"
 handle_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
@@ -31,3 +39,5 @@ heartbeat:
   interval_hours: 24
 canary: false
 max_bridge_depth: 1
+dry_run: true
+enforce_channel_pinning: false

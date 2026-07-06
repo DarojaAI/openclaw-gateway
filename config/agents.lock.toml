@@ -13,6 +13,8 @@ allowed_channels = ["1501612164098687087"]
 heartbeat_enabled = true
 heartbeat_interval_hours = 24
 canary           = false
+dry_run          = true
+enforce_channel_pinning = false
 
 [agents.linux-desktop-seed]
 repo             = "DarojaAI/linux-desktop-seed"
@@ -27,6 +29,8 @@ allowed_channels = ["1501612164098687087"]
 heartbeat_enabled = true
 heartbeat_interval_hours = 24
 canary           = false
+dry_run          = true
+enforce_channel_pinning = false
 
 [agents.mcp-tooling]
 repo             = "DarojaAI/mcp-tooling"
@@ -41,6 +45,8 @@ allowed_channels = ["1501612164098687087"]
 heartbeat_enabled = true
 heartbeat_interval_hours = 24
 canary           = false
+dry_run          = true
+enforce_channel_pinning = false
 
 [agents.openclaw-gateway]
 repo             = "DarojaAI/openclaw-gateway"
@@ -55,3 +61,5 @@ allowed_channels = ["1501612164098687087"]
 heartbeat_enabled = true
 heartbeat_interval_hours = 24
 canary           = false
+dry_run          = true
+enforce_channel_pinning = false
