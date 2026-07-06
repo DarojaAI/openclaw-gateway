@@ -9,12 +9,20 @@ Usage:
     python3 scripts/capability-dispatch.py --message '@vm-provision hello'
     python3 scripts/capability-dispatch.py --capability vm-provision
     python3 scripts/capability-dispatch.py --handle @linux-desktop-seed
+    python3 scripts/capability-dispatch.py --handle @linux-desktop-seed \
+        --channel 1501612164098687087
     echo '@vm-provision hello' | python3 scripts/capability-dispatch.py
+
+Channel pinning (RFC #31 Phase 5, Issues #47/#48):
+  Pass --channel <snowflake> to enable channel pinning checks. Per-agent
+  flags `dry_run` (default True) and `enforce_channel_pinning` (default
+  False) control whether a violation is enforced (exit 4) or just logged.
 
 Exit codes:
     0  — routing decision on stdout (JSON)
     1  — unknown handle/capability or none found
     2  — TOML parse error or lockfile missing
+    4  — channel pinning violation in enforcement mode (no stdout)
 
 Resolution order:
     1. @handle match (handle field in lockfile)
@@ -31,7 +39,14 @@ Output (JSON on stdout):
       "config_source": "...",
       "config_sha": "...",
       "capabilities": ["vm-provision", "vm-decommission", "pr-stewardship"],
-      "role": "executor"
+      "role": "executor",
+      "channel_pinning": {           # present iff --channel was supplied
+        "channel_id": "...",
+        "allowed_channels": ["..."],
+        "violation": false,
+        "dry_run": true,
+        "enforced": false
+      }
     }
 
 For --dry-run mode, the output is:
@@ -53,6 +68,13 @@ from typing import Any
 # Import shared TOML parser from _agents_lock.py
 # ---------------------------------------------------------------------------
 from _agents_lock import load_agents_lock
+
+# Channel pinning (RFC #31 Phase 5, Issues #47/#48)
+from channel_pinning import (
+    EXIT_CHANNEL_PINNING_VIOLATION,
+    check_channel_pinning,
+    log_violation,
+)
 
 # ---------------------------------------------------------------------------
 # Handle routing
@@ -80,6 +102,30 @@ def route_by_handle(
         # agent_handle is like "@linux-desktop-seed"
         if agent_handle == f"@{handle}":
             return _build_routing_result(agent, slug, "handle", agent_handle)
+    return None
+
+
+def _find_agent_by_handle(
+    registry: dict[str, Any], handle: str
+) -> tuple[str, dict[str, Any]] | None:
+    """Return (slug, agent) for a handle, or None. Used by channel pinning
+    to access the full agent entry (allowed_channels, dry_run, etc.)."""
+    agents = registry.get("agents", {})
+    for slug, agent in agents.items():
+        if agent.get("handle", "") == f"@{handle}":
+            return slug, agent
+    return None
+
+
+def _find_agent_by_capability(
+    registry: dict[str, Any], capability: str
+) -> tuple[str, dict[str, Any]] | None:
+    """Return (slug, agent) for a capability, or None. Used by channel pinning."""
+    agents = registry.get("agents", {})
+    for slug, agent in agents.items():
+        caps = agent.get("capabilities", [])
+        if isinstance(caps, list) and capability in caps:
+            return slug, agent
     return None
 
 
@@ -161,6 +207,15 @@ def main() -> int:
         default=False,
         help="Log the routing decision but exit 0 with dry_run flag; do not emit a route decision",
     )
+    parser.add_argument(
+        "--channel",
+        default=None,
+        help=(
+            "Originating Discord channel snowflake ID. When supplied, "
+            "channel pinning is checked against the agent's "
+            "allowed_channels (RFC #31 Phase 5, #47/#48)."
+        ),
+    )
     args = parser.parse_args()
 
     # Determine lockfile path
@@ -223,6 +278,7 @@ def main() -> int:
 
     # Route
     result: dict[str, Any] | None = None
+    resolved_agent: dict[str, Any] | None = None  # full entry for pinning
     if handle_to_lookup is not None:
         result = route_by_handle(registry, handle_to_lookup)
         if result is None:
@@ -231,6 +287,11 @@ def main() -> int:
                 file=sys.stderr,
             )
             raise SystemExit(1)
+        # Fetch full agent for channel pinning (route_by_handle returns
+        # the routing-shaped dict, not the raw lockfile entry).
+        agent_pair = _find_agent_by_handle(registry, handle_to_lookup)
+        if agent_pair is not None:
+            resolved_agent = agent_pair[1]
     elif capability_to_lookup is not None:
         result = route_by_capability(registry, capability_to_lookup)
         if result is None:
@@ -239,8 +300,36 @@ def main() -> int:
                 file=sys.stderr,
             )
             raise SystemExit(1)
+        agent_pair = _find_agent_by_capability(registry, capability_to_lookup)
+        if agent_pair is not None:
+            resolved_agent = agent_pair[1]
 
-    # Dry-run mode
+    # Channel pinning (RFC #31 Phase 5, Issues #47/#48)
+    # Only when --channel was supplied and we have an agent to check against.
+    pinning_blocked: bool = False
+    if (
+        args.channel is not None
+        and args.channel != ""
+        and resolved_agent is not None
+    ):
+        pinning = check_channel_pinning(resolved_agent, args.channel)
+        if result is not None:
+            result["channel_pinning"] = {
+                "channel_id": pinning["channel_id"],
+                "allowed_channels": pinning["allowed_channels"],
+                "violation": pinning["violation"],
+                "dry_run": pinning["dry_run"],
+                "enforced": pinning["enforced"],
+            }
+        if pinning["violation"]:
+            log_violation(
+                resolved_agent.get("handle", ""),
+                pinning,
+            )
+            if pinning["enforced"]:
+                pinning_blocked = True
+
+    # Dry-run mode (RFC #31, existing --dry-run CLI flag)
     if args.dry_run:
         dry_result = {
             "would_route_to": result,
@@ -248,6 +337,10 @@ def main() -> int:
         }
         print(json.dumps(dry_result, indent=2))
         return 0
+
+    # Channel pinning enforcement (RFC #31 Phase 5, #47)
+    if pinning_blocked:
+        raise SystemExit(EXIT_CHANNEL_PINNING_VIOLATION)
 
     print(json.dumps(result, indent=2))
     return 0

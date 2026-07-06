@@ -57,6 +57,16 @@
     "canary": {
       "type": "boolean",
       "description": "If true, the gateway routes ~10% of traffic here."
+    },
+    "enforce_channel_pinning": {
+      "type": "boolean",
+      "description": "If true, the gateway enforces channel pinning for this agent (routing fails when the message arrives from a channel not in allowed_channels). Only effective when dry_run is false. Default: false (dry-run is opt-in to enforcement).",
+      "default": false
+    },
+    "dry_run": {
+      "type": "boolean",
+      "description": "If true, channel pinning violations for this agent are logged but do not block routing. Default: true per RFC #31 Phase 5 (#48) — dry-run for one week before enforcement activates. Flip to false to activate enforcement (requires enforce_channel_pinning: true).",
+      "default": true
     }
   }
 }

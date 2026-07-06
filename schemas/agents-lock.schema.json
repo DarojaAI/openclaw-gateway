@@ -83,6 +83,16 @@
             "canary": {
               "type": "boolean",
               "description": "Whether this agent is in canary (partial rollout) mode."
+            },
+            "enforce_channel_pinning": {
+              "type": "boolean",
+              "description": "Whether channel pinning is enforced for this agent (RFC #31 Phase 5, Issue #47). Only effective when dry_run is false.",
+              "default": false
+            },
+            "dry_run": {
+              "type": "boolean",
+              "description": "Whether channel pinning violations are logged without blocking (RFC #31 Phase 5, Issue #48). Default true for one week, then false to enforce.",
+              "default": true
             }
           }
         }
