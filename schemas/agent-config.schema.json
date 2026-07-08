@@ -58,6 +58,12 @@
       "type": "boolean",
       "description": "If true, the gateway routes ~10% of traffic here."
     },
+    "canary_weight_percent": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Percentage of traffic routed to this canary agent (default 10). Only effective when canary is true."
+    },
     "enforce_channel_pinning": {
       "type": "boolean",
       "description": "If true, the gateway enforces channel pinning for this agent (routing fails when the message arrives from a channel not in allowed_channels). Only effective when dry_run is false. Default: false (dry-run is opt-in to enforcement).",
