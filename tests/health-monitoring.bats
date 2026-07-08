@@ -9,6 +9,7 @@
 #   - Quarantine integration with route-by-handle.py
 #   - Missing lockfile
 #   - JSON output shape
+#   - Stale deploy quarantine (Issue #50)
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
@@ -295,6 +296,262 @@ cleanup_tmp() {
 
 @test "15. health check with missing lockfile" {
     run python3 "${HEALTH_SCRIPT}" --lockfile "/nonexistent/path/agents.lock.toml" --check
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"lockfile"* ]]
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# Tests — Stale deploy quarantine (Issue #50)
+# ---------------------------------------------------------------------------
+
+# Helper: create a lockfile with a specific last_deploy_at for an agent
+setup_tmp_lockfile_stale() {
+    local stale_days="$1"
+    local deploy_date="$2"
+    TMP_LOCKFILE_DIR="$(mktemp -d)"
+    TMP_LOCKFILE="${TMP_LOCKFILE_DIR}/agents.lock.toml"
+    cat > "${TMP_LOCKFILE}" << EOF
+schema_version = "1"
+
+[agents.linux-desktop-seed]
+repo             = "DarojaAI/linux-desktop-seed"
+handle           = "@linux-desktop-seed"
+contract_version = "v1"
+config_source    = "https://github.com/DarojaAI/linux-desktop-seed/blob/main/.openclaw/agent-config.yaml"
+capabilities     = ["vm-provision", "vm-decommission"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
+last_deploy_at   = "${deploy_date}"
+stale_deploy_days = ${stale_days}
+EOF
+}
+
+# Helper: create a lockfile with a fresh last_deploy_at
+setup_tmp_lockfile_fresh() {
+    TMP_LOCKFILE_DIR="$(mktemp -d)"
+    TMP_LOCKFILE="${TMP_LOCKFILE_DIR}/agents.lock.toml"
+    local now
+    now=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+    cat > "${TMP_LOCKFILE}" << EOF
+schema_version = "1"
+
+[agents.linux-desktop-seed]
+repo             = "DarojaAI/linux-desktop-seed"
+handle           = "@linux-desktop-seed"
+contract_version = "v1"
+config_source    = "https://github.com/DarojaAI/linux-desktop-seed/blob/main/.openclaw/agent-config.yaml"
+capabilities     = ["vm-provision", "vm-decommission"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
+last_deploy_at   = "${now}"
+EOF
+}
+
+# Helper: create a lockfile with no last_deploy_at
+setup_tmp_lockfile_no_deploy() {
+    TMP_LOCKFILE_DIR="$(mktemp -d)"
+    TMP_LOCKFILE="${TMP_LOCKFILE_DIR}/agents.lock.toml"
+    cat > "${TMP_LOCKFILE}" << EOF
+schema_version = "1"
+
+[agents.linux-desktop-seed]
+repo             = "DarojaAI/linux-desktop-seed"
+handle           = "@linux-desktop-seed"
+contract_version = "v1"
+config_source    = "https://github.com/DarojaAI/linux-desktop-seed/blob/main/.openclaw/agent-config.yaml"
+capabilities     = ["vm-provision", "vm-decommission"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
+EOF
+}
+
+# Helper: create a lockfile with multiple agents and different deploy dates
+setup_tmp_lockfile_mixed() {
+    TMP_LOCKFILE_DIR="$(mktemp -d)"
+    TMP_LOCKFILE="${TMP_LOCKFILE_DIR}/agents.lock.toml"
+    local old_date
+    old_date=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc) - timedelta(days=60)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+    local fresh_date
+    fresh_date=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+    cat > "${TMP_LOCKFILE}" << EOF
+schema_version = "1"
+
+[agents.linux-desktop-seed]
+repo             = "DarojaAI/linux-desktop-seed"
+handle           = "@linux-desktop-seed"
+contract_version = "v1"
+config_source    = "https://github.com/DarojaAI/linux-desktop-seed/blob/main/.openclaw/agent-config.yaml"
+capabilities     = ["vm-provision"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
+last_deploy_at   = "${old_date}"
+stale_deploy_days = 30
+
+[agents.darojaai_architect]
+repo             = "DarojaAI/darojaai_architect"
+handle           = "@darojaai-architect"
+contract_version = "v1"
+config_source    = "https://github.com/DarojaAI/darojaai_architect/blob/main/.openclaw/agent-config.yaml"
+capabilities     = ["architecture"]
+role             = "advisor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
+last_deploy_at   = "${fresh_date}"
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# 16. Agent with last_deploy_at older than X days → quarantined
+# ---------------------------------------------------------------------------
+
+@test "16. stale deploy quarantine — agent older than X days is quarantined" {
+    # Deploy date is 60 days ago, threshold is 30 days
+    local deploy_date
+    deploy_date=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc) - timedelta(days=60)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+    setup_tmp_lockfile_stale 30 "${deploy_date}"
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 1 ]
+    [[ "$output" == *'"quarantined"'* ]]
+    [[ "$output" == *'"linux-desktop-seed"'* ]]
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# 17. Agent with last_deploy_at within X days → healthy
+# ---------------------------------------------------------------------------
+
+@test "17. stale deploy quarantine — agent within X days is healthy" {
+    setup_tmp_lockfile_fresh
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"quarantined"'* ]]
+    # No agents should be quarantined
+    [[ "$output" == *'"quarantined": []'* ]]
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# 18. Agent with no last_deploy_at → handled gracefully
+# ---------------------------------------------------------------------------
+
+@test "18. stale deploy quarantine — agent with no last_deploy_at is skipped" {
+    setup_tmp_lockfile_no_deploy
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"healthy"'* ]]
+    # No agents quarantined
+    [[ "$output" == *'"quarantined": []'* ]]
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# 19. Configurable stale_deploy_days per agent
+# ---------------------------------------------------------------------------
+
+@test "19. stale deploy quarantine — configurable stale_deploy_days per agent" {
+    # Agent has stale_deploy_days=15, deploy is 20 days ago → should be quarantined
+    local deploy_date
+    deploy_date=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc) - timedelta(days=20)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+    setup_tmp_lockfile_stale 15 "${deploy_date}"
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 1 ]
+    [[ "$output" == *'"quarantined"'* ]]
+    cleanup_tmp
+}
+
+@test "20. stale deploy quarantine — custom threshold not exceeded" {
+    # Agent has stale_deploy_days=30, deploy is 20 days ago → should NOT be quarantined
+    local deploy_date
+    deploy_date=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc) - timedelta(days=20)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+    setup_tmp_lockfile_stale 30 "${deploy_date}"
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"quarantined": []'* ]]
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# 21. Mixed agents — some stale, some fresh
+# ---------------------------------------------------------------------------
+
+@test "21. stale deploy quarantine — mixed agents (one stale, one fresh)" {
+    setup_tmp_lockfile_mixed
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 1 ]
+    [[ "$output" == *'"quarantined"'* ]]
+    [[ "$output" == *'"linux-desktop-seed"'* ]]
+    [[ "$output" == *'"healthy"'* ]]
+    [[ "$output" == *'"darojaai_architect"'* ]]
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# 22. Invalid last_deploy_at → handled gracefully
+# ---------------------------------------------------------------------------
+
+@test "22. stale deploy quarantine — invalid last_deploy_at is skipped" {
+    TMP_LOCKFILE_DIR="$(mktemp -d)"
+    TMP_LOCKFILE="${TMP_LOCKFILE_DIR}/agents.lock.toml"
+    cat > "${TMP_LOCKFILE}" << EOF
+schema_version = "1"
+
+[agents.linux-desktop-seed]
+repo             = "DarojaAI/linux-desktop-seed"
+handle           = "@linux-desktop-seed"
+contract_version = "v1"
+config_source    = "https://github.com/DarojaAI/linux-desktop-seed/blob/main/.openclaw/agent-config.yaml"
+capabilities     = ["vm-provision"]
+role             = "executor"
+allowed_channels = ["1501612164098687087"]
+heartbeat_enabled = true
+heartbeat_interval_hours = 24
+canary           = false
+last_deploy_at   = "not-a-date"
+EOF
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"quarantined": []'* ]]
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# 23. Stale deploy quarantine output is valid JSON
+# ---------------------------------------------------------------------------
+
+@test "23. stale deploy quarantine output is valid JSON" {
+    local deploy_date
+    deploy_date=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc) - timedelta(days=60)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+    setup_tmp_lockfile_stale 30 "${deploy_date}"
+    run_health_lockfile "${TMP_LOCKFILE}" --check-stale
+    [ "$status" -eq 1 ]
+    python3 -c "import json; json.loads('''$output''')" || {
+        echo "Output is not valid JSON"
+        return 1
+    }
+    cleanup_tmp
+}
+
+# ---------------------------------------------------------------------------
+# 24. Stale deploy quarantine with missing lockfile
+# ---------------------------------------------------------------------------
+
+@test "24. stale deploy quarantine with missing lockfile" {
+    run python3 "${HEALTH_SCRIPT}" --lockfile "/nonexistent/path/agents.lock.toml" --check-stale
     [ "$status" -eq 2 ]
     [[ "$output" == *"lockfile"* ]]
     cleanup_tmp

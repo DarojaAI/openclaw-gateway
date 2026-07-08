@@ -80,6 +80,11 @@
               },
               "description": "Heartbeat configuration for agent health monitoring."
             },
+            "stale_deploy_days": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of days after which a deploy is considered stale. Default: 30."
+            },
             "canary": {
               "type": "boolean",
               "description": "Whether this agent is in canary (partial rollout) mode."
