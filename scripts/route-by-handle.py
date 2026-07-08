@@ -65,6 +65,9 @@ from channel_pinning import (
     log_violation,
 )
 
+# Quarantine check (RFC #31 Phase 6, Issue #49)
+from quarantine import is_quarantined, get_quarantine_info
+
 # ---------------------------------------------------------------------------
 # Handle routing
 # ---------------------------------------------------------------------------
@@ -171,6 +174,16 @@ def main() -> int:
         raise SystemExit(1)
 
     slug, agent = resolved
+
+    # Quarantine check (RFC #31 Phase 6, Issue #49)
+    if is_quarantined(slug, lockfile_path):
+        info = get_quarantine_info(slug, lockfile_path)
+        reason = info.get("reason", "unknown") if info else "unknown"
+        print(
+            f"ERROR: agent @{first_handle} is quarantined: {reason}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
     # Build the base routing decision
     decision: dict[str, Any] = {

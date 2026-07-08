@@ -76,6 +76,9 @@ from channel_pinning import (
     log_violation,
 )
 
+# Quarantine check (RFC #31 Phase 6, Issue #49)
+from quarantine import is_quarantined, get_quarantine_info
+
 # ---------------------------------------------------------------------------
 # Handle routing
 # ---------------------------------------------------------------------------
@@ -303,6 +306,18 @@ def main() -> int:
         agent_pair = _find_agent_by_capability(registry, capability_to_lookup)
         if agent_pair is not None:
             resolved_agent = agent_pair[1]
+
+    # Quarantine check (RFC #31 Phase 6, Issue #49)
+    if resolved_agent is not None:
+        agent_slug = result.get("slug") if result else None
+        if agent_slug and is_quarantined(agent_slug, lockfile_path):
+            info = get_quarantine_info(agent_slug, lockfile_path)
+            reason = info.get("reason", "unknown") if info else "unknown"
+            print(
+                f"ERROR: agent {result.get('handle', '')} is quarantined: {reason}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
 
     # Channel pinning (RFC #31 Phase 5, Issues #47/#48)
     # Only when --channel was supplied and we have an agent to check against.
