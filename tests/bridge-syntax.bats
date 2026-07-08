@@ -168,8 +168,9 @@ assert 'https://example.com' in d['question']
 
 @test "no arguments returns usage error" {
 	run python3 "$PYTHON_SCRIPT"
-	[ "$status" -eq 1 ]
-	echo "$output" | grep -q "Usage"
+	# argparse exits 2 on missing required argument
+	[ "$status" -eq 2 ]
+	echo "$output" | grep -qiE "(usage|error)"
 }
 
 @test "no arguments returns usage error via shell wrapper" {
