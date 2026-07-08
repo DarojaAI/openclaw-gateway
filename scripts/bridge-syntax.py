@@ -78,18 +78,27 @@ def resolve_agent(
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        print(
-            "Usage: bridge-syntax.py <message> [path/to/agents.lock.toml]",
-            file=sys.stderr,
-        )
-        return 1
+    import argparse
 
-    message = sys.argv[1]
-    lockfile_path = (
-        Path(sys.argv[2]) if len(sys.argv) > 2
-        else Path("config/agents.lock.toml")
-    ).expanduser().resolve()
+    parser = argparse.ArgumentParser(
+        description="Parse bridge syntax @A ask @B <question> and emit a JSON routing decision",
+    )
+    parser.add_argument("message", help="Bridge syntax message")
+    parser.add_argument(
+        "lockfile",
+        nargs="?",
+        default="config/agents.lock.toml",
+        help="Path to agents.lock.toml",
+    )
+    parser.add_argument("--audit", action="store_true", help="Write audit log entry")
+    parser.add_argument("--contract-version", default="v1", help="Contract version")
+    parser.add_argument("--capability", default="bridge", help="Capability name")
+    parser.add_argument("--channel-id", default="", help="Channel ID (snowflake)")
+    parser.add_argument("--log-path", default=None, help="Path to audit log file")
+    args = parser.parse_args()
+
+    message = args.message
+    lockfile_path = Path(args.lockfile).expanduser().resolve()
 
     # 1. Parse the syntax
     try:
@@ -136,6 +145,21 @@ def main() -> int:
         "bridge_syntax": message.strip(),
     }
     print(json.dumps(routing, indent=2))
+
+    # 5. Write audit log entry if --audit flag is set
+    if args.audit:
+        from audit_log import write_audit_entry
+        write_audit_entry(
+            from_agent=source_handle.lstrip("@"),
+            to_agent=target_handle.lstrip("@"),
+            from_handle=source_handle,
+            to_agent_handle=target_handle,
+            contract_version=args.contract_version,
+            capability=args.capability,
+            channel_id=args.channel_id,
+            log_path=Path(args.log_path) if args.log_path else None,
+        )
+
     return 0
 
 
