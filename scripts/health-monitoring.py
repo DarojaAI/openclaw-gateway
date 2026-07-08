@@ -34,6 +34,9 @@ from quarantine import (
     unquarantine_agent,
 )
 
+# Default number of days before a deploy is considered stale
+DEFAULT_STALE_DEPLOY_DAYS = 30
+
 # ---------------------------------------------------------------------------
 # Heartbeat config
 # ---------------------------------------------------------------------------
@@ -81,6 +84,46 @@ def get_heartbeat_interval(agent: dict[str, Any]) -> int:
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
+
+def get_stale_deploy_days(agent: dict[str, Any]) -> int:
+    """Get the stale deploy threshold for an agent.
+
+    Uses per-agent ``stale_deploy_days`` if present in the lockfile,
+    otherwise falls back to ``DEFAULT_STALE_DEPLOY_DAYS`` (30 days).
+    """
+    val = agent.get("stale_deploy_days")
+    if val is not None:
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return DEFAULT_STALE_DEPLOY_DAYS
+    return DEFAULT_STALE_DEPLOY_DAYS
+
+
+def is_deploy_stale(agent: dict[str, Any], now: datetime | None = None) -> bool:
+    """Return True if the agent's last deploy is older than its stale threshold.
+
+    ``now`` can be injected for testing.
+    """
+    last_deploy_at = agent.get("last_deploy_at")
+    if not last_deploy_at:
+        return False
+    try:
+        # Handle Z suffix for Python < 3.11
+        raw = last_deploy_at.replace("Z", "+00:00")
+        last_deploy = datetime.fromisoformat(raw)
+        if last_deploy.tzinfo is None:
+            last_deploy = last_deploy.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    days = get_stale_deploy_days(agent)
+    delta = now - last_deploy
+    return delta.days > days
+
 
 def check_agent_health(
     agent_slug: str,
@@ -142,6 +185,50 @@ def check_all_agents(
     }
 
 
+def check_stale_deploys(
+    lockfile_path: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Check all agents for stale deploys and quarantine those older than the threshold.
+
+    Returns a dict with ``quarantined`` (list of slugs) and ``skipped`` (list of slugs
+    that were already quarantined or did not have a ``last_deploy_at`` field).
+    """
+    if lockfile_path is None:
+        script_dir = Path(__file__).resolve().parent
+        repo_root = script_dir.parent
+        lockfile_path = repo_root / "config" / "agents.lock.toml"
+
+    registry = load_agents_lock(lockfile_path)
+    if not registry:
+        return {"error": "lockfile not found or empty"}
+
+    agents = registry.get("agents", {})
+    quarantined: list[str] = []
+    skipped: list[str] = []
+    healthy: list[str] = []
+
+    for slug, agent in agents.items():
+        # Skip agents already quarantined
+        if is_quarantined(slug, lockfile_path):
+            skipped.append(slug)
+            continue
+
+        if is_deploy_stale(agent, now):
+            reason = f"deploy stale (>{get_stale_deploy_days(agent)}d)"
+            quarantine_agent(slug, reason, lockfile_path)
+            quarantined.append(slug)
+        else:
+            healthy.append(slug)
+
+    return {
+        "quarantined": quarantined,
+        "skipped": skipped,
+        "healthy": healthy,
+        "total": len(agents),
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -152,6 +239,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Health monitoring for agent heartbeat")
     parser.add_argument("--lockfile", default=None, help="Path to agents.lock.toml")
     parser.add_argument("--check", action="store_true", help="Check health of all agents")
+    parser.add_argument("--check-stale", action="store_true", help="Check for stale deploys and quarantine agents")
     parser.add_argument("--agent", default=None, help="Check specific agent health")
     parser.add_argument("--status", action="store_true", help="Show health status of all agents")
     parser.add_argument("--quarantine", default=None, help="Quarantine an agent (comma-separated slugs)")
@@ -160,6 +248,16 @@ def main() -> int:
     args = parser.parse_args()
 
     lockfile_path = Path(args.lockfile) if args.lockfile else None
+
+    if args.check_stale:
+        result = check_stale_deploys(lockfile_path)
+        if "error" in result:
+            print(json.dumps(result, indent=2))
+            return 2
+        print(json.dumps(result, indent=2))
+        if result.get("quarantined"):
+            return 1
+        return 0
 
     if args.status or args.check:
         result = check_all_agents(lockfile_path)
