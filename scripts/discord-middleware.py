@@ -89,7 +89,8 @@ def _run_bridge_syntax(
         if result.returncode == 0:
             return json.loads(result.stdout)
     except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-        pass
+        # Best-effort helper: subprocess/parse failures are treated as no route.
+        return None
     return None
 
 
