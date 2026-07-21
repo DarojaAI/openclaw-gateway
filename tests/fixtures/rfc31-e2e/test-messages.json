@@ -1,0 +1,42 @@
+[
+  {
+    "content": "hello from linux-desktop-seed",
+    "channel_id": "1000000000000000001",
+    "author_id": "user-1"
+  },
+  {
+    "content": "@linux-desktop-seed deploy the VM now",
+    "channel_id": "1000000000000000001",
+    "author_id": "user-1"
+  },
+  {
+    "content": "@linux-desktop-seed ask @darojaai-architect what is the best architecture for this?",
+    "channel_id": "1000000000000000001",
+    "author_id": "user-1"
+  },
+  {
+    "content": "@mcp-tooling list my MCP servers",
+    "channel_id": "1000000000000000001",
+    "author_id": "user-1"
+  },
+  {
+    "content": "@mcp-tooling list my MCP servers",
+    "channel_id": "999999999999999999",
+    "author_id": "user-1"
+  },
+  {
+    "content": "@secure-agent run security audit",
+    "channel_id": "999999999999999999",
+    "author_id": "user-1"
+  },
+  {
+    "content": "just a plain message with no handles",
+    "channel_id": "1000000000000000001",
+    "author_id": "user-1"
+  },
+  {
+    "content": "@nonexistent-agent do something",
+    "channel_id": "1000000000000000001",
+    "author_id": "user-1"
+  }
+]

@@ -1,0 +1,58 @@
+schema_version = "1"
+
+# Agent 1: stable executor with channel pinning
+[agents.linux-desktop-seed]
+repo             = "DarojaAI/linux-desktop-seed"
+handle           = "@linux-desktop-seed"
+contract_version = "v1"
+config_source    = "https://example.com/agent-config.yaml"
+config_sha       = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+capabilities     = ["vm-provision", "vm-decommission"]
+role             = "executor"
+allowed_channels = ["1000000000000000001", "1000000000000000002"]
+dry_run          = true
+enforce_channel_pinning = false
+canary           = false
+canary_weight_percent = 10
+
+# Agent 2: advisor with no channel restrictions
+[agents.darojaai-architect]
+repo             = "DarojaAI/darojaai_architect"
+handle           = "@darojaai-architect"
+contract_version = "v1"
+config_source    = "https://example.com/agent-config.yaml"
+config_sha       = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
+capabilities     = ["architecture", "code-review"]
+role             = "advisor"
+canary           = false
+canary_weight_percent = 10
+
+# Agent 3: canary agent with channel pinning + enforcement
+[agents.mcp-tooling]
+repo             = "DarojaAI/mcp-tooling"
+handle           = "@mcp-tooling"
+contract_version = "v1"
+config_source    = "https://example.com/agent-config.yaml"
+config_sha       = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+capabilities     = ["mcp-servers", "tooling"]
+role             = "executor"
+allowed_channels = ["1000000000000000001"]
+dry_run          = false
+enforce_channel_pinning = true
+canary           = true
+canary_weight_percent = 10
+
+# Agent 4: restricted agent (channel-pinned, enforcement on)
+[agents.secure-agent]
+repo             = "DarojaAI/secure-agent"
+handle           = "@secure-agent"
+contract_version = "v1"
+config_source    = "https://example.com/agent-config.yaml"
+config_sha       = "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
+capabilities     = ["security-audit"]
+role             = "security"
+allowed_channels = ["1000000000000000001"]
+dry_run          = false
+enforce_channel_pinning = true
+canary           = false
+canary_weight_percent = 10
