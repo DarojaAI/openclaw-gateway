@@ -40,14 +40,12 @@ def fetch_openrouter_models():
                 return data["data"]
             if isinstance(data, list):
                 return data
-            print(f"Error: Unexpected API response structure: {type(data)}", file=sys.stderr)
-            sys.exit(1)
+            raise RuntimeError(f"Unexpected API response structure: {type(data)}")
     except URLError as e:
-        print(f"Error: Failed to fetch OpenRouter models: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"Failed to fetch OpenRouter models: {e}") from e
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON from OpenRouter API: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"Invalid JSON from OpenRouter API: {e}") from e
+    raise RuntimeError("Failed to fetch OpenRouter models")
 
 
 def find_model(models, model_id):
