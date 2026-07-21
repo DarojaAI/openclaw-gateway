@@ -45,7 +45,6 @@ def fetch_openrouter_models():
         raise RuntimeError(f"Failed to fetch OpenRouter models: {e}") from e
     except json.JSONDecodeError as e:
         raise RuntimeError(f"Invalid JSON from OpenRouter API: {e}") from e
-    raise RuntimeError("Failed to fetch OpenRouter models")
 
 
 def find_model(models, model_id):
