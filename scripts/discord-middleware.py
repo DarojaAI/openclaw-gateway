@@ -139,8 +139,11 @@ def _run_capability_dispatch(
             raw = json.loads(result.stdout)
             # Unwrap dry_run wrapper if present
             return raw.get("would_route_to", raw)
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-        pass
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
+        print(
+            f"[discord-middleware] capability-dispatch failed: {exc}",
+            file=sys.stderr,
+        )
     return None
 
 
