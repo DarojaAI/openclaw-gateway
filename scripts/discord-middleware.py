@@ -114,7 +114,8 @@ def _run_route_by_handle(
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)
     except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-        pass
+        # Treat subprocess/parse failures as "no route" to preserve middleware pass-through behavior.
+        return None
     return None
 
 
