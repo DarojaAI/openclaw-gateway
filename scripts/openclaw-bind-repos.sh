@@ -103,23 +103,37 @@ trap 'ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" "chmod 444 /hom
 # (or one whose openclaw.json was deleted out from under us) fails with
 # "ERROR: Config file not writable by desktopuser" because chmod 666
 # on a missing file is a no-op and test -w returns false.
-# Ref: deploy-staleness incident 2026-08-12, run 31604107068, step 39.
+# Ref: deploy-staleness incident 2026-08-12, runs 31604107068 /
+# 31608758814 / 31611156763.
+#
+# Each command echoes its result on failure so the deploy log surfaces
+# the actual root cause when 'test -w' later trips, instead of the bare
+# "ERROR: Config file not writable by desktopuser" line.
 echo "=========================================="
 echo "Phase 2: Unlocking config on server..."
 echo "=========================================="
 
 ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"set -e; \
-	 mkdir -p /home/desktopuser/.openclaw; \
+	 mkdir -p /home/desktopuser/.openclaw || { echo 'PHASE2_FAIL: mkdir failed'; exit 1; }; \
 	 if [ ! -f /home/desktopuser/.openclaw/openclaw.json ]; then \
-	   install -m 0644 /dev/null /home/desktopuser/.openclaw/openclaw.json; \
+	   install -m 0644 /dev/null /home/desktopuser/.openclaw/openclaw.json || { echo 'PHASE2_FAIL: install failed'; exit 1; }; \
+	   echo 'PHASE2_HEAL: created openclaw.json (was missing)'; \
+	 else \
+	   echo 'PHASE2_HEAL: openclaw.json exists, skipping install'; \
 	 fi; \
-	 chmod 755 /home/desktopuser/.openclaw; \
-	 chmod 666 /home/desktopuser/.openclaw/openclaw.json"
+	 stat -c 'PHASE2_BEFORE_CHMOD: %n mode=%a owner=%U:%G size=%s' /home/desktopuser/.openclaw /home/desktopuser/.openclaw/openclaw.json; \
+	 chmod 755 /home/desktopuser/.openclaw || { echo 'PHASE2_FAIL: chmod 755 .openclaw failed'; exit 1; }; \
+	 chmod 666 /home/desktopuser/.openclaw/openclaw.json || { echo 'PHASE2_FAIL: chmod 666 openclaw.json failed'; exit 1; }; \
+	 stat -c 'PHASE2_AFTER_CHMOD: %n mode=%a owner=%U:%G size=%s' /home/desktopuser/.openclaw /home/desktopuser/.openclaw/openclaw.json"
 
+W_CHECK_OUTPUT=$(ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
+	"sudo -u desktopuser stat -c '%a %U:%G' /home/desktopuser/.openclaw/openclaw.json 2>&1; echo PHASE2_TEST_W_RC=\$?" 2>&1)
+echo "$W_CHECK_OUTPUT" | sed 's/^/PHASE2_TEST_W: /'
 if ! ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"sudo -u desktopuser test -w /home/desktopuser/.openclaw/openclaw.json" 2>/dev/null; then
 	echo "ERROR: Config file not writable by desktopuser"
+	echo "PHASE2_DIAG: above PHASE2_* lines explain the file state"
 	exit 1
 fi
 
