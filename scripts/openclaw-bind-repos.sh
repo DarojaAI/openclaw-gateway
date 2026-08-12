@@ -97,12 +97,26 @@ export CHANNELS_FILE
 trap 'ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" "chmod 444 /home/desktopuser/.openclaw/openclaw.json" 2>/dev/null || true' EXIT
 
 # ── Phase 2: Unlock config on server ──
+# Self-healing: if /home/desktopuser/.openclaw/openclaw.json is missing,
+# create it as an empty file owned by desktopuser (mode 0644) before
+# chmod-ing to 0666 for the bind operation. Without this, a fresh VM
+# (or one whose openclaw.json was deleted out from under us) fails with
+# "ERROR: Config file not writable by desktopuser" because chmod 666
+# on a missing file is a no-op and test -w returns false.
+# Ref: deploy-staleness incident 2026-08-12, run 31604107068, step 39.
 echo "=========================================="
 echo "Phase 2: Unlocking config on server..."
 echo "=========================================="
 
 ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
-	"chmod 755 /home/desktopuser/.openclaw && chmod 666 /home/desktopuser/.openclaw/openclaw.json"
+	"set -e; \
+	 mkdir -p /home/desktopuser/.openclaw; \
+	 if [ ! -f /home/desktopuser/.openclaw/openclaw.json ]; then \
+	   install -m 0644 /dev/null /home/desktopuser/.openclaw/openclaw.json; \
+	   sudo chown desktopuser:desktopuser /home/desktopuser/.openclaw/openclaw.json; \
+	 fi; \
+	 chmod 755 /home/desktopuser/.openclaw; \
+	 chmod 666 /home/desktopuser/.openclaw/openclaw.json"
 
 if ! ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	"sudo -u desktopuser test -w /home/desktopuser/.openclaw/openclaw.json" 2>/dev/null; then
