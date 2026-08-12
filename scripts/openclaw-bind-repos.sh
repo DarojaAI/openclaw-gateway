@@ -214,8 +214,11 @@ if [ -n "$ALL_CHANNEL_IDS" ]; then
 		CHANNEL_ARGS="$CHANNEL_ARGS $ch_clean"
 	done
 
+	# SSH session is already desktopuser@${SERVER_IP}; sudo -u desktopuser
+	# is redundant and rejected by the post-2026-06-22 hardened sudoers
+	# (PR #968). Drop the wrapper.
 	ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
-		"sudo -u desktopuser python3 /tmp/openclaw-update-guilds.py \"$CONFIG_FILE\" \"$GUILD_ID\" $CHANNEL_ARGS"
+		"python3 /tmp/openclaw-update-guilds.py \"$CONFIG_FILE\" \"$GUILD_ID\" $CHANNEL_ARGS"
 fi
 
 # ── Phase 7: Restart gateway — ONLY after active-session check ──
@@ -285,9 +288,13 @@ if [[ "$SKIP_RESTART" -eq 1 ]]; then
 else
 	ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" bash <<'RESTART_SCRIPT'
 	set -e
-	sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user daemon-reload
-	if sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active --quiet openclaw-gateway.service 2>/dev/null; then
-		sudo -u desktopuser XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway.service
+	# SSH session is already desktopuser@${SERVER_IP}; sudo -u desktopuser
+	# is rejected by the post-2026-06-22 hardened sudoers (PR #968) for
+	# arbitrary commands. XDG_RUNTIME_DIR=... as a per-command env-var
+	# prefix is honored by bash directly without invoking sudo.
+	XDG_RUNTIME_DIR=/run/user/1000 systemctl --user daemon-reload
+	if XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active --quiet openclaw-gateway.service 2>/dev/null; then
+		XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway.service
 		echo "Gateway restarted"
 	else
 		echo "Gateway not active; skipping restart"
