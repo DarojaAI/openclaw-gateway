@@ -113,7 +113,6 @@ ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	 mkdir -p /home/desktopuser/.openclaw; \
 	 if [ ! -f /home/desktopuser/.openclaw/openclaw.json ]; then \
 	   install -m 0644 /dev/null /home/desktopuser/.openclaw/openclaw.json; \
-	   sudo chown desktopuser:desktopuser /home/desktopuser/.openclaw/openclaw.json; \
 	 fi; \
 	 chmod 755 /home/desktopuser/.openclaw; \
 	 chmod 666 /home/desktopuser/.openclaw/openclaw.json"
