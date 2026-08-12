@@ -128,10 +128,10 @@ ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
 	 stat -c 'PHASE2_AFTER_CHMOD: %n mode=%a owner=%U:%G size=%s' /home/desktopuser/.openclaw /home/desktopuser/.openclaw/openclaw.json"
 
 W_CHECK_OUTPUT=$(ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
-	"sudo -u desktopuser stat -c '%a %U:%G' /home/desktopuser/.openclaw/openclaw.json 2>&1; echo PHASE2_TEST_W_RC=\$?" 2>&1)
+	"stat -c '%a %U:%G' /home/desktopuser/.openclaw/openclaw.json 2>&1; echo PHASE2_TEST_W_RC=\$?" 2>&1)
 echo "$W_CHECK_OUTPUT" | sed 's/^/PHASE2_TEST_W: /'
 if ! ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
-	"sudo -u desktopuser test -w /home/desktopuser/.openclaw/openclaw.json" 2>/dev/null; then
+	"[ -w /home/desktopuser/.openclaw/openclaw.json ]" 2>/dev/null; then
 	echo "ERROR: Config file not writable by desktopuser"
 	echo "PHASE2_DIAG: above PHASE2_* lines explain the file state"
 	exit 1
