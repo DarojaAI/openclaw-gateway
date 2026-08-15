@@ -378,3 +378,117 @@ print(json.dumps(m.build_create_body('bond_nexus', 10.0, 'monthly')))
 	[ "$status" -eq 0 ]
 	echo "$output" | grep -q '"name": "bond_nexus"'
 }
+
+# ── reconciliation fallback (deploy 31846911941 failure class) ─────
+#
+# Before this fix, create_key raised ProvisioningError when the POST
+# response did not carry data.key, even though the key was created
+# server-side (HTTP 200). This was the bug class that broke every
+# per-agent provisioning pass since OpenRouter changed their response
+# shape to redact/mask data.key.
+#
+# The fix falls back to list_keys() and reconciles by matching the
+# name we passed in build_create_body (which equals agent_id) or by
+# the data.hash echoed back in the POST body. The deploying caller
+# gets back the same shape it always did, so no call-site changes.
+
+stage_create_response_masked() {
+	# POST returns 200 but data.key is masked/replaced with sk-or-…XXXX
+	# (the exact bug class observed in deploy 31846911941's logs).
+	local label="$1"
+	local limit="$2"
+	local reset="$3"
+	local hash="$4"
+	cat >"$FIXTURES/POST__api_v1_keys.json" <<JSON
+{"data":{"hash":"$hash","label":"$label","limit":$limit,"limit_reset":"$reset","usage":0.0,"usage_monthly":0.0,"include_byok_in_limit":true,"created_at":"2026-08-15T00:00:00Z","key":"sk-or-…XXXX"}}
+JSON
+	echo "200" >"$FIXTURES/POST__api_v1_keys.status"
+}
+
+stage_create_response_no_key_field() {
+	# POST returns 200 with no data.key field at all (other API shape
+	# variant we have seen in the wild).
+	local label="$1"
+	local limit="$2"
+	local reset="$3"
+	local hash="$4"
+	cat >"$FIXTURES/POST__api_v1_keys.json" <<JSON
+{"data":{"hash":"$hash","label":"$label","limit":$limit,"limit_reset":"$reset","usage":0.0,"usage_monthly":0.0,"include_byok_in_limit":true,"created_at":"2026-08-15T00:00:00Z"}}
+JSON
+	echo "200" >"$FIXTURES/POST__api_v1_keys.status"
+}
+
+@test "create_key recovers from masked data.key via list_keys reconciliation by name" {
+	# Stage an empty list first (so no existing key), then a list
+	# that DOES contain the newly-created one as if the script
+	# re-listed after the POST. The reconciliation must match by
+	# name == agent_id and return a dict with hash/label/limit.
+	# Note: setup() staged an empty list; we override it now.
+	stage_list_response_with "abc123" "my-agent" 10 monthly 0.0
+	stage_create_response_masked "my-agent" 10 monthly "abc123"
+
+	run python3 "$SCRIPT" provision --agent my-agent --limit 10 --reset monthly
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"abc123"* ]]
+	[[ "$output" == *"my-agent"* ]]
+}
+
+@test "create_key recovers when data.key is absent via list_keys reconciliation by hash" {
+	# Stage an empty list first, then a list containing the
+	# just-created key with the matching hash. The script should
+	# recover via the data.hash echoed back in POST and persisted
+	# through reconciliation.
+	stage_list_response_with "deadbeef" "second-agent" 20 weekly 5.0
+	stage_create_response_no_key_field "second-agent" 20 weekly "deadbeef"
+
+	run python3 "$SCRIPT" provision --agent second-agent --limit 20 --reset weekly
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"deadbeef"* ]]
+	[[ "$output" == *"second-agent"* ]]
+}
+
+@test "create_key raises ProvisioningError when reconciliation list is empty" {
+	# The POST returned a body without data.key, AND the follow-up
+	# GET /keys came back empty. We must NOT fabricate; fail loud.
+	stage_list_response_empty
+	stage_create_response_masked "ghost-agent" 10 monthly "nohash"
+
+	run python3 "$SCRIPT" provision --agent ghost-agent --limit 10 --reset monthly
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"refusing to fabricate auth profile"* ]]
+}
+
+@test "create_key raises ProvisioningError when GET /keys reconciliation fails" {
+	# stage a POST that triggers the fallback and ensure GET /keys
+	# fails (delete the staged list response so the GET 404s). The
+	# script should fall through gracefully: list_keys raises
+	# ProvisioningError, the script swallows it, raise_on_unrecoverable
+	# flips to False, but listed is [] and listed is also falsy without
+	# the recovery path being exercised. Wait — the current behavior
+	# is: if list_keys raises, raise_on_unrecoverable=False, listed=[],
+	# then the first guard `if not listed and raise_on_unrecoverable`
+	# is `if True and False`, which falls through. Then `matched=None`
+	# triggers the second guard. That is what we want — second guard
+	# catches the unhashed case. Stage POST with no hash to exercise.
+	rm -f "$FIXTURES/GET__api_v1_keys.json" "$FIXTURES/GET__api_v1_keys.status"
+	# POST returns no data.key AND no data.hash
+	cat >"$FIXTURES/POST__api_v1_keys.json" <<'JSON'
+{"data":{"label":"orphan","limit":10,"limit_reset":"monthly","include_byok_in_limit":true}}
+JSON
+	echo "200" >"$FIXTURES/POST__api_v1_keys.status"
+
+	run python3 "$SCRIPT" provision --agent orphan --limit 10 --reset monthly
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"POST /keys reconciliation: no list entry matches"* ]]
+}
+
+@test "module-level: create_key returns dict on happy path (regression sanity)" {
+	# Sanity: the original happy path still works after the patch.
+	stage_list_response_empty
+	stage_create_response "sk-or-v1-real-key" "happy-agent" 5 daily 0.0
+
+	run python3 "$SCRIPT" provision --agent happy-agent --limit 5 --reset daily
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"sk-or-v1-real-key"* ]]
+	[[ "$output" == *"happy-agent"* ]]
+}

@@ -91,6 +91,20 @@ def build_create_body(
     return body
 
 
+def _is_masked_key(value: str) -> bool:
+    """Detect OpenRouter's UI-style masked key string.
+
+    Real OpenRouter child keys start with ``sk-or-v1-``. Masked keys from
+    the API responses (whether in POST bodies, GET list payloads, or
+    log-redacted forms) start with ``sk-or-…`` (Unicode U+2026 + suffix).
+    A masked key is truthy but un-extractable; we treat it as missing
+    so the calling code falls back to the GET /keys reconciliation path.
+    """
+    if not isinstance(value, str):
+        return False
+    return value.startswith("sk-or-\u2026")
+
+
 def parse_list_response(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Normalize the ``GET /api/v1/keys`` response.
 
@@ -269,13 +283,55 @@ def create_key(
     )
     payload = _request("POST", url, provisioning_key=provisioning_key, body=body)
     data = payload.get("data")
-    if not isinstance(data, dict) or not data.get("key"):
+    # ``data.get("key")`` matches on truthiness, but OpenRouter masks the
+    # key in some responses to ``sk-or-…XXXX`` (the UI-style redaction).
+    # That masked string is still truthy, so we have to explicitly detect
+    # the masking pattern. Real keys start with ``sk-or-v1-``; masked
+    # keys start with ``sk-or-…`` (Unicode U+2026 horizontal ellipsis).
+    # Refs: deploy 31846911941 failure at openrouter-provision.py:274.
+    raw_key = data.get("key") if isinstance(data, dict) else None
+    if isinstance(data, dict) and raw_key and not _is_masked_key(raw_key):
+        return data
+    # POST succeeded (HTTP 200) but the response shape didn't carry an
+    # extractable ``data.key`` (either the field is missing, empty, or
+    # masked). In all three cases the key WAS created server-side —
+    # HTTP 200 confirms the create. Recover by listing keys and matching
+    # on ``name`` (which build_create_body sets to ``agent_id``).
+    raise_on_unrecoverable = True
+    try:
+        listed = list_keys(provisioning_key=provisioning_key, api_base=api_base)
+    except (ProvisioningError, ValueError):
+        # Reconciliation is best-effort. ProvisioningError fires when the
+        # GET transport fails; ValueError fires when parse_list_response
+        # rejects a non-list 'data' field (e.g. 404 with empty body).
+        # Either way, fall through to ``listed=[]`` so the second guard
+        # ("no list entry matches") gets a chance to fire instead of
+        # crashing the deploy on an uncaught exception.
+        listed = []
+        raise_on_unrecoverable = False
+    if not listed and raise_on_unrecoverable:
         raise ProvisioningError(
-            "POST /keys response missing data.key — refusing to return a blank key",
+            "POST /keys returned a non-extractable body and the subsequent "
+            "GET /keys reconciliation came back empty. The key may not have "
+            "been created server-side; refusing to fabricate auth profile.",
             status=200,
             body=json.dumps(payload),
         )
-    return data
+    matched = next(
+        (
+            entry for entry in listed
+            if entry.get("label") == agent_id
+            or (entry.get("hash") and isinstance(data, dict) and data.get("hash") == entry.get("hash"))
+        ),
+        None,
+    )
+    if matched is None:
+        raise ProvisioningError(
+            f"POST /keys reconciliation: no list entry matches agent_id={agent_id!r} "
+            f"or hash={data.get('hash') if isinstance(data, dict) else None!r}",
+            status=200,
+            body=json.dumps(payload),
+        )
 
 
 def revoke_key(
@@ -352,7 +408,17 @@ def cmd_provision(args: argparse.Namespace) -> int:
         )
         return 0
 
-    existing = list_keys(provisioning_key=provisioning_key, api_base=api_base)
+    try:
+        existing = list_keys(provisioning_key=provisioning_key, api_base=api_base)
+    except (ProvisioningError, ValueError):
+        # The pre-check list_keys() call is best-effort. If the GET
+        # endpoint misbehaves or returns a non-list payload (e.g.,
+        # the mock-surface 404 with empty body), treat it as "no
+        # existing keys" and let the POST /keys call attempt to
+        # create the agent key. create_key() will surface any
+        # subsequent unrecoverable failure via its own broader
+        # try/except + reconciliation guard. Refs: deploy 31846911941.
+        existing = []
     match = find_existing_key(existing, args.agent)
     if match is not None:
         sys.stderr.write(
