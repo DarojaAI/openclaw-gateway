@@ -408,7 +408,17 @@ def cmd_provision(args: argparse.Namespace) -> int:
         )
         return 0
 
-    existing = list_keys(provisioning_key=provisioning_key, api_base=api_base)
+    try:
+        existing = list_keys(provisioning_key=provisioning_key, api_base=api_base)
+    except (ProvisioningError, ValueError):
+        # The pre-check list_keys() call is best-effort. If the GET
+        # endpoint misbehaves or returns a non-list payload (e.g.,
+        # the mock-surface 404 with empty body), treat it as "no
+        # existing keys" and let the POST /keys call attempt to
+        # create the agent key. create_key() will surface any
+        # subsequent unrecoverable failure via its own broader
+        # try/except + reconciliation guard. Refs: deploy 31846911941.
+        existing = []
     match = find_existing_key(existing, args.agent)
     if match is not None:
         sys.stderr.write(
