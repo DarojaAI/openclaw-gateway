@@ -156,6 +156,17 @@ export -f ensure_repo
 echo "$TARGET_REPOS" | jq -r '.[]' | xargs -P 4 -I {} bash -c 'ensure_repo "$@"' _ {}
 unset -f ensure_repo
 
+# Phase 4 wrapped in `set +e`: a per-agent provisioning failure
+# (e.g. the openrouter-provision.py predicate bug from PR #87, or any
+# 5xx from OpenRouter's /api/v1/keys endpoint) must NOT abort the
+# script before Phase 5 writes override.conf. Without this, the
+# deploy chain's verify-override-conf gate at Layer 1 fires on
+# `actual == pre` (file on disk unchanged), and Phase 5 never runs.
+# The deploy chain already has its own gate handling for Phase 4
+# outcomes via PR #1468's continue-on-error: true. We restore `set -e`
+# before Phase 5 so downstream failure surfacing stays loud.
+set +e
+
 # ── Phase 4: Configure agents sequentially ──
 echo "=========================================="
 echo "Phase 4: Configuring agents..."
@@ -179,6 +190,9 @@ while IFS=' ' read -r REPO_FULL CH_ID; do
 done < "$CHANNELS_FILE"
 
 rm -f "$CHANNELS_FILE" "${CHANNELS_FILE}.lock"
+
+# Phase 4 done; restore strict-fail semantics for Phase 5 onward.
+set -e
 
 # ── Phase 5: Update Discord token ──
 echo "=========================================="
