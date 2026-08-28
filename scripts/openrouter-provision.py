@@ -42,8 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sys
+import osimport sys
 import urllib.error
 import urllib.request
 from typing import Any
