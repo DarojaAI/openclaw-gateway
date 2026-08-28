@@ -42,8 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sys
+import osimport sys
 import urllib.error
 import urllib.request
 from typing import Any
@@ -283,13 +282,29 @@ def create_key(
     )
     payload = _request("POST", url, provisioning_key=provisioning_key, body=body)
     data = payload.get("data")
-    # ``data.get("key")`` matches on truthiness, but OpenRouter masks the
-    # key in some responses to ``sk-or-…XXXX`` (the UI-style redaction).
-    # That masked string is still truthy, so we have to explicitly detect
-    # the masking pattern. Real keys start with ``sk-or-v1-``; masked
-    # keys start with ``sk-or-…`` (Unicode U+2026 horizontal ellipsis).
-    # Refs: deploy 31846911941 failure at openrouter-provision.py:274.
-    raw_key = data.get("key") if isinstance(data, dict) else None
+    # OpenRouter's actual ``POST /keys`` success shape is
+    # ``{"data": {...metadata...}, "key": "sk-or-v1-..."}`` — the
+    # key lives at the **top level** of the payload, NOT under
+    # ``data.key``. ``data.get("key")`` was empty on the deploy
+    # run 33140981754 (2026-08-28T04:13:25Z, both provision calls
+    # returning valid ``sk-or-v1-…`` strings at top-level only).
+    # Read top-level first, then fall back to ``data.get("key")`` and
+    # finally reconcile via list_keys with the agent ``name``. The
+    # _is_masked_key guard is preserved: real keys start with
+    # ``sk-or-v1-``; masked keys start with ``sk-or-…`` (Unicode
+    # U+2026 horizontal ellipsis). Refs: deploy 31846911941 (legacy
+    # masked-key shape); deploy 33140981754 (current top-level-shape).
+    top_level_key = payload.get("key") if isinstance(payload, dict) else None
+    data_nested_key = data.get("key") if isinstance(data, dict) else None
+    if isinstance(top_level_key, str) and top_level_key and not _is_masked_key(top_level_key):
+        # Lift the top-level key into the data block so all downstream
+        # reconciliation paths see a unified shape.
+        if isinstance(data, dict):
+            data.setdefault("key", top_level_key)
+        else:
+            data = {"key": top_level_key}
+        return data
+    raw_key = data_nested_key
     if isinstance(data, dict) and raw_key and not _is_masked_key(raw_key):
         return data
     # POST succeeded (HTTP 200) but the response shape didn't carry an
@@ -320,11 +335,43 @@ def create_key(
     matched = next(
         (
             entry for entry in listed
-            if entry.get("label") == agent_id
-            or (entry.get("hash") and isinstance(data, dict) and data.get("hash") == entry.get("hash"))
+            if (
+                entry.get("label") == agent_id
+                or entry.get("name") == agent_id
+            ) or (
+                entry.get("hash") and isinstance(data, dict)
+                and data.get("hash") == entry.get("hash")
+            )
         ),
         None,
     )
+    # parse_list_response collapses 'name' into 'label' (with a
+    # masked fragment fallback) on listed entries. If we didn't
+    # match by either of the names above, re-query the raw
+    # endpoint with full entry shape and retry matching on a name
+    # field directly. This is a structural redundancy that
+    # _is_masked_key makes necessary. Refs: deploy 33140981754.
+    # Note: keep this fenced off the happy path to avoid the cost
+    # on routine dispatches.
+    if matched is None:
+        try:
+            raw_listed = _request(
+                "GET", f"{api_base.rstrip('/')}/keys",
+                provisioning_key=provisioning_key
+            ).get("data") or []
+        except (ProvisioningError, ValueError, urllib.error.URLError):
+            raw_listed = []
+        matched = next(
+            (
+                entry for entry in raw_listed
+                if isinstance(entry, dict)
+                and (
+                    entry.get("name") == agent_id
+                    or entry.get("label") == agent_id
+                )
+            ),
+            None,
+        )
     if matched is None:
         raise ProvisioningError(
             f"POST /keys reconciliation: no list entry matches agent_id={agent_id!r} "
