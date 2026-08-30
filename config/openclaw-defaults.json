@@ -68,6 +68,28 @@
         "spawnAcpSessions": true
       },
       "token": "__DISCORD_BOT_TOKEN__"
+    },
+    "a2a": {
+      "enabled": true,
+      "advertisedUrl": "https://openclaw.example.com",
+      "peers": {
+        "darojaai_architect":   { "token": "${A2A_ARCHITECT_TOKEN}" },
+        "daroja_coding_agent":  { "token": "${A2A_CODING_TOKEN}" },
+        "dev_nexus":            { "token": "${A2A_DEV_NEXUS_TOKEN}" },
+        "daroja_tenancy":       { "token": "${A2A_TENANCY_TOKEN}" },
+        "daroja_security_agent": { "token": "${A2A_SECURITY_TOKEN}" },
+        "linux_desktop_seed":   { "token": "${A2A_LDS_TOKEN}" }
+      },
+      "exposeAgents": [
+        "darojaai_architect",
+        "daroja-coding-agent",
+        "dev-nexus",
+        "daroja-tenancy",
+        "daroja-security-agent",
+        "linux-desktop-seed"
+      ],
+      "replyTimeoutMs": 120000,
+      "rateLimitPerMinute": 30
     }
   },
   "commands": {
