@@ -56,6 +56,7 @@ The following skills are maintained in this repo and deployed to all VMs:
 | `model-add` | Add a model to the catalog and open a PR | `/model-add` |
 | `model-management` | Model discovery, switching, cost tracking | `/model`, `/model-switch` |
 | `model-preferences` | Model defaults for all roles | Model preferences |
+| `openclaw-upgrade` | Upgrade OpenClaw gateway binary to a target version | `/openclaw-upgrade` |
 | `session-commands` | Session control | `/reset`, `/compact`, `/stop` |
 | `viz` | Diagram rendering (Mermaid, Graphviz, Chart.js) | Visualize diagrams |
 
