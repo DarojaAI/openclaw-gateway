@@ -14,6 +14,15 @@ Each pair is a `##` section. Within each, three subsections are required:
 
 The skill matches source→target by major.minor (`x.y.x`). Patch differences within the same minor are the same upgrade.
 
+## Environment-aware read order
+
+The skill reads the source-of-truth pin env-aware:
+
+1. `config/openclaw-version.${ENV}` (preferred; per-env override)
+2. `config/openclaw-version` (fallback; default for any env)
+
+Where `${ENV}` is the GitHub Actions environment name (`prod`, `head`, `test`, ...). Per-env files exist alongside the global default. New envs without a per-env file inherit the global default; deploys still fail at `openclaw-version-check.sh` if the on-VM binary disagrees.
+
 ---
 
 ## 2026.6.x → 2026.7.x
