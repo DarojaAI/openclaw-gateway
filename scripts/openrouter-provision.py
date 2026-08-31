@@ -111,9 +111,13 @@ def parse_list_response(payload: dict[str, Any]) -> list[dict[str, Any]]:
     The OpenRouter API returns ``{"data": [...]}`` where each entry
     carries ``hash``, ``label``, ``limit``, ``limit_reset``, and
     ``usage_monthly`` (with ``usage`` being the lifetime spend).
-    We surface the ``label`` and ``hash`` fields with a fallback to
-    ``name`` for older responses, and pass through whatever else
-    OpenRouter provides so callers can extend without re-parsing.
+
+    ``name`` is the key's human-readable name — which is what
+    ``build_create_body`` sets to ``agent_id`` — while ``label`` on
+    API-created keys is often the masked key string itself
+    (``sk-or-v1-0e6...1c96``, per the OpenRouter /keys schema example).
+    Prefer ``name`` for matching so per-agent keys surface under their
+    agent id; fall back to ``label`` for keys created in the dashboard.
     """
     data = payload.get("data")
     if not isinstance(data, list):
@@ -125,7 +129,12 @@ def parse_list_response(payload: dict[str, Any]) -> list[dict[str, Any]]:
         normalized.append(
             {
                 "hash": entry.get("hash", ""),
-                "label": entry.get("label") or entry.get("name", ""),
+                # name first: our create body sets name=agent_id; the
+                # API's label field on API-created keys is the masked
+                # key string. Dashboard-created keys carry a friendly
+                # label, so fall back to it.
+                "label": entry.get("name") or entry.get("label", ""),
+                "name": entry.get("name", "") or entry.get("label", ""),
                 "limit": entry.get("limit"),
                 "limit_reset": entry.get("limit_reset"),
                 "usage": entry.get("usage"),
@@ -175,9 +184,9 @@ def split_agent_csv(csv_value: str) -> list[str]:
 def find_existing_key(
     rows: list[dict[str, Any]], agent_id: str
 ) -> dict[str, Any] | None:
-    """Return the row whose ``label`` matches ``agent_id``, or None."""
+    """Return the first row whose label/name matches ``agent_id``."""
     for row in rows:
-        if row.get("label") == agent_id:
+        if row.get("label") == agent_id or row.get("name") == agent_id:
             return row
     return None
 

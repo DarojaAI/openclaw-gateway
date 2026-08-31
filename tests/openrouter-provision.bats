@@ -247,6 +247,28 @@ JSON
 	echo "$output" | grep -q "hash-2	dev_nexus	25.0	weekly	0.0"
 }
 
+@test "list: prefers the name field over label (API-created keys label = masked key)" {
+	# OpenRouter's /keys response carries BOTH name (the human-readable
+	# name our create body sets to agent_id) and label (often the masked
+	# key string itself, e.g. sk-or-v1-0e6...1c96). Matching/matching
+	# must use name so per-agent keys surface under their agent id
+	# (regression: linux-desktop-seed health check saw 0 of 24 agents
+	# matched and every key reported as an orphan, 2026-08-31).
+	cat >"$FIXTURES/GET__api_v1_keys.json" <<'JSON'
+{"data":[
+  {"hash":"hash-1","label":"sk-or-v1-0e6...1c96","name":"bond_nexus","limit":10.0,"limit_reset":"monthly","usage":12.0,"usage_monthly":2.5},
+  {"hash":"hash-2","label":"sk-or-v1-9f2...a72","name":"dev_nexus","limit":25.0,"limit_reset":"weekly","usage":0.0,"usage_monthly":0.0}
+]}
+JSON
+	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	run python3 "$SCRIPT" list
+	[ "$status" -eq 0 ]
+	# Label column surfaces the NAME, not the masked key string.
+	echo "$output" | grep -q "hash-1	bond_nexus	10.0	monthly	2.5"
+	echo "$output" | grep -q "hash-2	dev_nexus	25.0	weekly	0.0"
+	[ "$(echo "$output" | grep -c "sk-or-v1-")" -eq 0 ]
+}
+
 # ── info ──────────────────────────────────────────────────────────
 
 @test "info: parses the data block and prints it as JSON" {
