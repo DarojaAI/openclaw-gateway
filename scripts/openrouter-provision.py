@@ -268,10 +268,39 @@ def _request(
 def list_keys(
     *, provisioning_key: str, api_base: str = DEFAULT_API_BASE
 ) -> list[dict[str, Any]]:
-    """Return the normalized list of every key under this account."""
-    url = f"{api_base.rstrip('/')}/keys"
-    payload = _request("GET", url, provisioning_key=provisioning_key)
-    return parse_list_response(payload)
+    """Return the normalized list of every key under this account.
+
+    OpenRouter's ``GET /api/v1/keys`` caps the response at the server-side
+    page size (~100 keys). On an account with many keys (the org hit
+    ~529 keys on 2026-08-31 with a single-page cap), a single
+    unparameterized request misses the majority of keys — agents with
+    only late-page rows appear as ``missing`` in callers that depend on
+    full coverage (e.g. the post-deploy per-agent provisioning gate in
+    linux-desktop-seed, which checks that every agent in ``agents.list``
+    has at least one child key with limit+limit_reset). Paginate
+    transparently here so every caller of ``list_keys`` sees a
+    complete inventory.
+
+    The pagination contract is: ``?limit=N&offset=M`` returns at most N
+    keys starting at offset M. We loop with N=100 and M=0,100,200,...
+    until a short page (less than N entries) signals the tail. The
+    loop is bounded by an absolute ceiling so a misbehaving server
+    that always returns N entries can't infinite-loop the deploy.
+    """
+    base = api_base.rstrip("/")
+    page_size = 100
+    offset = 0
+    normalized: list[dict[str, Any]] = []
+    max_pages = 100  # 100 pages * 100 keys/page = 10000 keys max
+    for _ in range(max_pages):
+        url = f"{base}/keys?limit={page_size}&offset={offset}"
+        payload = _request("GET", url, provisioning_key=provisioning_key)
+        page = parse_list_response(payload)
+        normalized.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+    return normalized
 
 
 def create_key(
