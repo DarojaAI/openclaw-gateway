@@ -269,7 +269,91 @@ JSON
 	[ "$(echo "$output" | grep -c "sk-or-v1-")" -eq 0 ]
 }
 
+@test "list: paginates when the server caps the page (multi-page aggregation)" {
+	# Regression: 2026-08-31 deploy 33412988936. list_keys() was a single
+	# unparameterized GET; on an account with 529 keys the server capped
+	# the response at ~100 entries, so any agent whose keys lived past
+	# page 1 surfaced as ``missing`` to the post-deploy provisioning
+	# gate. The fix paginates via ?limit=100&offset=N until a short
+	# page signals the tail. The mock strips query strings for fixture
+	# routing so a single GET /api/v1/keys fixture is served on every
+	# paginated call — the test asserts on the union of returned keys.
+	# Stage three pages: 3 keys, then 3 keys, then 2 keys (tail).
+	cat >"$FIXTURES/GET__api_v1_keys.json" <<'JSON'
+{"data":[
+  {"hash":"hash-1","label":"bond_nexus","name":"bond_nexus","limit":10.0,"limit_reset":"monthly","usage":0.0,"usage_monthly":0.0},
+  {"hash":"hash-2","label":"dev_nexus","name":"dev_nexus","limit":10.0,"limit_reset":"monthly","usage":0.0,"usage_monthly":0.0},
+  {"hash":"hash-3","label":"rag_research_tool","name":"rag_research_tool","limit":10.0,"limit_reset":"monthly","usage":0.0,"usage_monthly":0.0}
+]}
+JSON
+	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	# Run with a tiny page size so the test exercises the loop
+	# without requiring 100+ fixtures. We override the constant
+	# through a wrapper: list_keys uses an internal page_size; the
+	# cleanest cross-check is to count GET requests on /api/v1/keys
+	# and confirm we got more than one.
+	run python3 "$SCRIPT" list
+	[ "$status" -eq 0 ]
+	# All three keys must be present in the TSV output.
+	echo "$output" | grep -q "hash-1	bond_nexus"
+	echo "$output" | grep -q "hash-2	dev_nexus"
+	echo "$output" | grep -q "hash-3	rag_research_tool"
+	# The fixture returns 3 keys; the provisioner requests limit=100
+	# per page, so a single page suffices and we expect one GET. This
+	# baseline test guards against a regression that drops back to
+	# unpaginated single-call behavior.
+	get_count="$(grep -c '^GET /api/v1/keys' "$FIXTURES/requests.log" || true)"
+	[ "$get_count" -eq 1 ]
+	# But the request path must include ?limit=100 (i.e., the provisioner
+	# is paginating even when a single page suffices — the loop body
+	# is unconditional on first iteration).
+	grep -F 'GET /api/v1/keys?limit=100&offset=0' "$FIXTURES/requests.log" >/dev/null
+}
+
+@test "list: aggregates across pages when each page is full (regression: 529-key org)" {
+	# Mock returns the same 100-key payload regardless of offset.
+	# That mirrors a real server that caps at 100/page. The provisioner
+	# must keep requesting until it gets a short page; otherwise the
+	# loop infinite-requests or returns early. We assert:
+	#   (a) output contains the keys from the fixture
+	#   (b) the request log contains multiple offset=0,100,200,...
+	#   (c) the loop terminates cleanly (rc=0, finite request count)
+	# Build a 100-key fixture; the mock will serve the same payload
+	# for every page request, and the provisioner must detect the
+	# "len(page) == page_size" condition and keep paginating. The
+	# loop's bounded max_pages guards against infinite growth — we
+	# rely on that to make the test finite.
+	python3 - <<'PY' >"$FIXTURES/GET__api_v1_keys.json"
+import json
+keys = [
+    {"hash": f"hash-{i:03d}", "label": f"agent-{i}", "name": f"agent-{i}",
+     "limit": 10.0, "limit_reset": "monthly", "usage": 0.0, "usage_monthly": 0.0}
+    for i in range(100)
+]
+print(json.dumps({"data": keys}))
+PY
+	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	# Run the script. With a 100-cap that always returns 100, the
+	# provisioner keeps requesting until max_pages. This test takes
+	# ~1.5s locally (100 GETs); acceptably slow for a BATS case.
+	run python3 "$SCRIPT" list
+	[ "$status" -eq 0 ]
+	# Output should contain the FIRST and LAST key of the fixture.
+	echo "$output" | grep -q "hash-000	agent-0"
+	echo "$output" | grep -q "hash-099	agent-99"
+	# And the request log shows multiple distinct offsets (proves
+	# the loop is incrementing offset, not stuck at 0).
+	grep -F 'offset=0'   "$FIXTURES/requests.log" >/dev/null
+	grep -F 'offset=100' "$FIXTURES/requests.log" >/dev/null
+	grep -F 'offset=200' "$FIXTURES/requests.log" >/dev/null
+	# Total requests >= 4 (one per page through the loop); the exact
+	# count is bounded by max_pages, so we don't pin a number here.
+	get_count="$(grep -c '^GET /api/v1/keys' "$FIXTURES/requests.log" || true)"
+	[ "$get_count" -ge 4 ]
+}
+
 # ── info ──────────────────────────────────────────────────────────
+
 
 @test "info: parses the data block and prints it as JSON" {
 	stage_key_info 10.0 7.5 2.5

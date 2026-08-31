@@ -73,12 +73,22 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _handle(self, method):
-        path = self.path
+        # Strip the query string for fixture routing — the provisioner
+        # now paginates with ``?limit=100&offset=N`` and a future caller
+        # might add other filters. Fixtures are keyed on METHOD+PATH,
+        # not on query params; otherwise each paginated call would need
+        # its own fixture file and a single canonical mock couldn't
+        # serve a multi-page sequence with one body. If a future test
+        # needs to assert on query params, the requests.log records the
+        # raw path (with query string) for that purpose.
+        from urllib.parse import urlsplit
+        raw_path = self.path
+        path = urlsplit(raw_path).path
         with open(requests_log, "a") as f:
-            f.write(f"{method} {path}\n")
+            f.write(f"{method} {raw_path}\n")
         if method == "DELETE":
             with open(delete_log, "a") as f:
-                f.write(f"{path}\n")
+                f.write(f"{raw_path}\n")
             body = b'{"data":null}'
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
