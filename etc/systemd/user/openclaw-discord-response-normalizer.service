@@ -1,0 +1,37 @@
+[Unit]
+Description=OpenClaw Discord Response Normalizer
+Documentation=https://github.com/DarojaAI/openclaw-gateway
+# Soft dependency on the gateway (Wants=, not PartOf=).
+#
+# 2026-06-09 incident regression: the viz unit previously had
+#   Before=openclaw-gateway.service
+#   PartOf=openclaw-gateway.service
+# which caused a viz service reload to SIGTERM the gateway. PartOf= is the
+# wrong directive for "I want to start with the gateway" — it cascades
+# stop/restart lifecycle events to the parent unit. Wants= is correct.
+#
+# Do NOT reintroduce PartOf= or Before= here. The gateway MUST be able to
+# send Discord replies even if this service is down — the normalizer is
+# best-effort. If you need start-order coordination, use After=.
+Wants=openclaw-gateway.service
+After=network-online.target openclaw-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/desktopuser/.openclaw/services/discord-response-normalizer
+ExecStart=/usr/bin/node /home/desktopuser/.openclaw/services/discord-response-normalizer/normalize-server.js
+Environment=NORMALIZER_PORT=8767
+Environment=NORMALIZER_HOST=localhost
+Environment=NORMALIZER_CACHE_DIR=/home/desktopuser/.openclaw/services/discord-response-normalizer/cache
+Environment=NODE_COMPILE_CACHE=/var/tmp/openclaw-compile-cache
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=3
+StartLimitIntervalSec=300
+TimeoutStopSec=15
+SuccessExitStatus=0 143
+KillMode=control-group
+
+[Install]
+WantedBy=default.target
