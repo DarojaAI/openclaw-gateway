@@ -1,0 +1,16 @@
+{
+  "name": "openclaw-discord-response-normalizer",
+  "version": "0.1.0",
+  "description": "Discord-bound response normalizer for OpenClaw agents. Canonicalizes markdown, escapes Discord-significant characters outside code fences, chunk-respecting code-fence boundaries, and emits a deterministic Discord-shaped payload.",
+  "main": "normalize-server.js",
+  "scripts": {
+    "start": "node normalize-server.js",
+    "normalize": "node normalize-cli.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=22.22.2"
+  }
+}

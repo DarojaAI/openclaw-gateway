@@ -57,10 +57,8 @@ The following skills are maintained in this repo and deployed to all VMs:
 | `model-management` | Model discovery, switching, cost tracking | `/model`, `/model-switch` |
 | `model-preferences` | Model defaults for all roles | Model preferences |
 | `openclaw-upgrade` | Upgrade OpenClaw gateway binary to a target version | `/openclaw-upgrade` |
-| `session-commands` | Session control | `/reset`, `/compact`, `/stop` |
+| `discord-response-normalizer` | Single source of truth for outbound Discord replies (canonicalize, escape, chunk, identity) | Discord reply formatting drift |
 | `viz` | Diagram rendering (Mermaid, Graphviz, Chart.js) | Visualize diagrams |
-
-## Skill Lifecycle
 
 ### 1. Create a Skill
 
