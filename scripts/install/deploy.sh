@@ -12,6 +12,43 @@ log_error() { echo "[ERROR] $*" >&2; }
 
 log_info "Installing OpenClaw Gateway from $REPO_ROOT"
 
+# 0. Ensure $PRE_UPGRADE_SNAPSHOT_TAG is set so the wedged-user-bus
+# recovery / openclaw upgrade-recovery script has a snapshot to roll back
+# to. Without this, the recovery aborts with "PRE_UPGRADE_SNAPSHOT_TAG
+# is unset; cannot auto-rollback" on first-deploy VMs (no upgrade
+# history) and on deploys where the upstream state-DB snapshot step
+# declined to write one (deploy run #34479399429 in
+# DarojaAI/linux-desktop-seed).
+#
+# Why L3b (this repo): the recovery script that consumes the tag is a
+# shipped component of the openclaw runtime, but the *environment* the
+# recovery reads from (the snapshot dir + sentinel file under $HOME) is
+# L3b's responsibility — this repo installs and owns the gateway's
+# runtime-services layer. Pinning the sentinel here means the deploy
+# doesn't depend on the upstream snapshot step for first-deploy gating.
+#
+# Behavior: sourced into this shell so $PRE_UPGRADE_SNAPSHOT_TAG is in
+# the env of every subsequent step in this script. Side-effect: writes
+# $HOME/.openclaw/pre-upgrade-snapshot-tag for the recovery script to
+# read directly.
+#
+# Errors are non-fatal: the helper exits non-zero when it can't get a tag,
+# and we log a WARN. The deploy continues; the recovery path will fall
+# back to its restart-only branch.
+if [[ "${SKIP_PRE_UPGRADE_SNAPSHOT:-0}" != "1" ]]; then
+	set +e
+	source "$REPO_ROOT/scripts/lib-write-pre-upgrade-snapshot-tag.sh"
+	rc=$?
+	set -e
+	if [[ $rc -ne 0 ]]; then
+		log_warn "lib-write-pre-upgrade-snapshot-tag.sh exited $rc; continuing without PRE_UPGRADE_SNAPSHOT_TAG (wedged-recovery may abort later)"
+	else
+		log_info "PRE_UPGRADE_SNAPSHOT_TAG=$PRE_UPGRADE_SNAPSHOT_TAG"
+	fi
+else
+	log_warn "PRE_UPGRADE_SNAPSHOT_TAG step skipped (SKIP_PRE_UPGRADE_SNAPSHOT=1)"
+fi
+
 # 1. Install OpenClaw binary (if not already installed)
 if command -v openclaw &>/dev/null; then
     log_info "OpenClaw binary already installed"
