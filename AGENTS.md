@@ -5,9 +5,9 @@
 ## Scope
 
 This repo is Layer 3b in the infrastructure stack:
-- Layer 1: terraform-hcloud-linux-vm (bare VM)
-- Layer 2: linux-desktop-setup (desktop environment)
-- Layer 3a: linux-desktop-seed (VM ops + deploy orchestration)
+- Layer 1: [`terraform-hcloud-linux-vm`](https://github.com/DarojaAI/terraform-hcloud-linux-vm) (bare VM)
+- Layer 2: [`linux-desktop-setup`](https://github.com/DarojaAI/linux-desktop-setup) (desktop environment)
+- Layer 3a: [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed) (VM ops + deploy orchestration)
 - **Layer 3b: openclaw-gateway (this repo)**
 
 ## What Belongs Here
@@ -23,15 +23,15 @@ This repo is Layer 3b in the infrastructure stack:
 
 ## What Does NOT Belong Here
 
-- VM provisioning (Layer 1 → terraform-hcloud-linux-vm)
-- Desktop environment setup (Layer 2 → linux-desktop-setup)
-- VM maintenance scripts (Layer 3a → linux-desktop-seed)
-- Session monitoring (Layer 3a → linux-desktop-seed)
-- Backup/security scripts (Layer 3a → linux-desktop-seed)
+- VM provisioning (Layer 1 → [`terraform-hcloud-linux-vm`](https://github.com/DarojaAI/terraform-hcloud-linux-vm))
+- Desktop environment setup (Layer 2 → [`linux-desktop-setup`](https://github.com/DarojaAI/linux-desktop-setup))
+- VM maintenance scripts (Layer 3a → [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed))
+- Session monitoring (Layer 3a → [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed))
+- Backup/security scripts (Layer 3a → [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed))
 
 ## Deploy Flow
 
-1. `linux-desktop-seed` deploys VM and clones this repo to `/tmp/openclaw-gateway`
+1. [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed) deploys VM and clones this repo to `/tmp/openclaw-gateway`
 2. `scripts/install/deploy.sh` is called to install config, skills, and scripts
 3. OpenClaw gateway service is restarted
 

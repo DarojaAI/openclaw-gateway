@@ -40,7 +40,7 @@ python3 scripts/bridge-syntax.py "@linux-desktop-seed ask @darojaai-architect Wh
   "target_agent": {
     "handle": "@darojaai-architect",
     "slug": "darojaai-architect",
-    "repo": "DarojaAI/darojaai-architect"
+    "repo": "DarojaAI/darojaai_architect"
   },
   "question": "What is the current architecture of the gateway?",
   "bridge_syntax": "@linux-desktop-seed ask @darojaai-architect What is the current architecture of the gateway?"
@@ -75,8 +75,8 @@ config_source    = "https://..."
 config_sha       = "..."
 loop_guard       = true
 
-[agents.darojaai-architect]
-repo             = "DarojaAI/darojaai-architect"
+[agents.darojaai_architect]
+repo             = "DarojaAI/darojaai_architect"
 handle           = "@darojaai-architect"
 contract_version = "v1"
 config_source    = "https://..."
@@ -100,8 +100,8 @@ The `loop_guard` field controls whether an agent can respond to another agent's 
 In `config/agents.lock.toml`, set `loop_guard = false` on the agent that should be allowed to respond:
 
 ```toml
-[agents.darojaai-architect]
-repo             = "DarojaAI/darojaai-architect"
+[agents.darojaai_architect]
+repo             = "DarojaAI/darojaai_architect"
 handle           = "@darojaai-architect"
 loop_guard       = false   # allows this agent to respond to bridge requests
 ```

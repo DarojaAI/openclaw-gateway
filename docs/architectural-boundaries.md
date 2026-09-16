@@ -15,8 +15,8 @@ This document defines the architectural boundaries for **openclaw-gateway (L3b)*
 **Core responsibility:** Route messages to agents, coordinate tool calls, enforce policies — without implementing tool logic or analyzing patterns.
 
 **Related documents:**
-- [dev-nexus architectural boundaries](https://github.com/DarojaAI/dev-nexus/blob/main/docs/architectural-boundaries.md) — Pattern analysis & memory
-- [mcp-tooling architectural boundaries](https://github.com/DarojaAI/mcp-tooling/blob/main/docs/architectural-boundaries.md) — External tool integrations
+- [`dev-nexus`](https://github.com/DarojaAI/dev-nexus) architectural boundaries — Pattern analysis & memory
+- [`mcp-tooling`](https://github.com/DarojaAI/mcp-tooling) architectural boundaries — External tool integrations
 
 ---
 

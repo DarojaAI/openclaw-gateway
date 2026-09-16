@@ -3,7 +3,7 @@
 **Endpoint:** `GET /lifecycle`  
 **Purpose:** Surface agent lifecycle data for the daroja-intelligence-console.
 
-Refs: DarojaAI/openclaw-gateway#108
+Refs: [`DarojaAI/openclaw-gateway#108`](https://github.com/DarojaAI/openclaw-gateway/issues/108)
 
 ## Response Shape
 

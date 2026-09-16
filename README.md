@@ -1,6 +1,6 @@
 # OpenClaw Gateway
 
-Discord AI agent platform built on [OpenClaw](https://openclaw.ai). Deployed as Layer 3b on top of `linux-desktop-setup` VMs.
+Discord AI agent platform built on [OpenClaw](https://openclaw.ai). Deployed as Layer 3b on top of [`linux-desktop-setup`](https://github.com/DarojaAI/linux-desktop-setup) VMs.
 
 ## What This Is
 
@@ -13,15 +13,15 @@ This repo contains everything needed to run a Discord-connected AI coding agent:
 ## Architecture
 
 ```
-Layer 1: terraform-hcloud-linux-vm  -> Bare VM
-Layer 2: linux-desktop-setup        -> Desktop + dev tools
-Layer 3a: linux-desktop-seed        -> VM ops + deploy orchestration
+Layer 1: [`terraform-hcloud-linux-vm`](https://github.com/DarojaAI/terraform-hcloud-linux-vm)  -> Bare VM
+Layer 2: [`linux-desktop-setup`](https://github.com/DarojaAI/linux-desktop-setup)        -> Desktop + dev tools
+Layer 3a: [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed)        -> VM ops + deploy orchestration
 Layer 3b: openclaw-gateway (this)   -> Discord AI agent platform
 ```
 
 ## Quick Start
 
-On a VM with OpenClaw already installed via `linux-desktop-seed`:
+On a VM with OpenClaw already installed via [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed):
 
 ```bash
 git clone https://github.com/DarojaAI/openclaw-gateway.git /tmp/openclaw-gateway

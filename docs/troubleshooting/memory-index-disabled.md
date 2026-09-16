@@ -105,8 +105,8 @@ in deploy output and can decide whether to rebuild.
 
 ## Related
 
-- `DarojaAI/openclaw-gateway#21` — original issue
-- `DarojaAI/linux-desktop-seed/docs/incidents/2026-06-24-override-conf-malformed-heredoc.md` — pattern: prefer validated structural writes over silent-recovery
+- [`DarojaAI/openclaw-gateway#21`](https://github.com/DarojaAI/openclaw-gateway/issues/21) — original issue
+- [`DarojaAI/linux-desktop-seed/docs/incidents/2026-06-24-override-conf-malformed-heredoc.md`](https://github.com/DarojaAI/linux-desktop-seed/blob/main/docs/incidents/2026-06-24-override-conf-malformed-heredoc.md) — pattern: prefer validated structural writes over silent-recovery
 - `scripts/post-deploy-verify-memory-index.sh` — implementation
 - `scripts/lib-parse-memory-status.py` — pure decision logic
 - `tests/post-deploy-verify-memory-index.bats` — 19 cases

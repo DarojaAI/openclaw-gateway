@@ -209,6 +209,4 @@ python -c "import requests; print(requests.get('http://135.181.44.237:8765/versi
 
 ## See Also
 
-- [Version API Documentation](./VERSION_API.md)
-- [OpenCLAW Configuration](config-management.md)
-- [Deployment Guide](./DEPLOYMENT-GUIDE.md)
+- [`linux-desktop-seed`](https://github.com/DarojaAI/linux-desktop-seed) — VM ops and deploy orchestration (hosts the Version API)
