@@ -281,9 +281,6 @@ Run before any merge to main:
 
 ```bash
 # Config merge validation
-bats tests/validate-config-merge.bats
-
-# All tests
 bats tests/*.bats
 
 # ShellCheck
@@ -297,8 +294,7 @@ pre-commit run --all-files
 
 | Test File | Validates |
 |---|---|
-| `tests/validate-config-merge.bats` | `models.mode = "merge"`, no env override stomping, `visibleReplies = "automatic"`, no hardcoded channels |
-| `tests/model-ids.bats` | Model IDs are valid OpenRouter models |
+| `tests/*.bats` | Model IDs, config merge invariants, visibleReplies, hardcoded channels |
 
 ---
 
