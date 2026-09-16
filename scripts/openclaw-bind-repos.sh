@@ -22,6 +22,48 @@ if [ "$TARGET_REPOS" = "[]" ] || [ -z "$TARGET_REPOS" ]; then
 	exit 0
 fi
 
+# ── Phase 0: Classify entries ────────────────────────────────────
+# Sort repos into two buckets:
+#   * workspace_repo (default) — has a GitHub repo on
+#     github.com/<owner>/<repo>. Phase 3 clones, Phase 4 configures.
+#   * lone_agent              — agent has no matching GitHub repo.
+#     Found by `gh api repos/<owner>/<repo>` returning 404. Phase 3
+#     is skipped; Phase 4 calls configure-lone-agent.sh to materialize
+#     `~/.openclaw/agents/<agent_id>/agent/agent-config.yaml` directly.
+#     Closes the contract-vs-config drift class: an agent like
+#     `ai_governance` (in dat-contract.yaml's agent_mcp_bindings but
+#     without a GitHub repo anchor) belongs on the VM but had no
+#     materialization path before.
+echo "=========================================="
+echo "Phase 0: Classifying entries (workspace vs lone)..."
+echo "=========================================="
+LONE_AGENTS=()
+WORKSPACE_REPOS=()
+while IFS= read -r ENTRY; do
+    [ -z "$ENTRY" ] && continue
+    if GH_TOKEN="$VM_GITHUB_TOKEN" gh api "repos/$ENTRY" --jq '.id' >/dev/null 2>&1; then
+        WORKSPACE_REPOS+=("$ENTRY")
+    else
+        # 404 or auth failure -> lone agent
+        # An entry in TARGET_REPOS is "owner/repo"; for a lone
+        # agent we synthesize "<agent_id>/<agent_id>" so the existing
+        # downstream phases don't need shape-aware logic. The agent ID
+        # is the second segment (lower-cased to canonical form).
+        AGENT_ID=$(echo "$ENTRY" | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]' | tr '-' '_')
+        LONE_AGENTS+=("$AGENT_ID")
+    fi
+done < <(echo "$TARGET_REPOS" | jq -r '.[]')
+
+if [ "${#LONE_AGENTS[@]}" -gt 0 ]; then
+    echo "Lone agents: ${LONE_AGENTS[*]}"
+fi
+if [ "${#WORKSPACE_REPOS[@]}" -gt 0 ]; then
+    echo "Workspace repos: ${WORKSPACE_REPOS[*]}"
+fi
+# Replace TARGET_REPOS with the workspace-only list for the rest of
+# the script. Lone agents get their own Phase 4b sub-step further down.
+TARGET_REPOS=$(printf '%s\n' "${WORKSPACE_REPOS[@]}" | jq -R . | jq -s 'map(select(. != ""))')
+
 # ── Phase 1: Pre-fetch all channel IDs in parallel ──
 echo "=========================================="
 echo "Phase 1: Fetching Discord channel IDs..."
@@ -192,6 +234,35 @@ done < "$CHANNELS_FILE"
 rm -f "$CHANNELS_FILE" "${CHANNELS_FILE}.lock"
 
 # Phase 4 done; restore strict-fail semantics for Phase 5 onward.
+set -e
+
+# ── Phase 4b: Materialize lone agents ───────────────────────────────
+# For each agent classified as lone in Phase 0 (no GitHub repo anchor),
+# call configure-lone-agent.sh to write a minimal `agent-config.yaml`
+# at ~/.openclaw/agents/<agent_id>/agent/. This closes the contract-vs-
+# config drift class: an agent in dat-contract.yaml's agent_mcp_bindings
+# that has no matching GitHub repo gets materialized without requiring
+# a workspace clone.
+#
+# Run with `set +e` because per-agent failure should not abort the rest
+# of the bind chain. Failures are reported in the deploy log and the
+# verify step (post-deploy-verify-provisioning.sh) will surface the gap.
+set +e
+if [ "${#LONE_AGENTS[@]}" -gt 0 ]; then
+    echo "=========================================="
+    echo "Phase 4b: Materializing lone agents..."
+    echo "=========================================="
+    for AGENT_ID in "${LONE_AGENTS[@]}"; do
+        echo "Lone agent: $AGENT_ID"
+        if ssh -n -o StrictHostKeyChecking=no "${SSH_USER}@${SERVER_IP}" \
+            "OPENCLAW_APP_USER=desktopuser bash /home/desktopuser/.openclaw/scripts/remote/configure-lone-agent.sh '$AGENT_ID'" \
+            2>&1; then
+            echo "[OK] lone agent $AGENT_ID materialized"
+        else
+            echo "[FAIL] lone agent $AGENT_ID materialization failed"
+        fi
+    done
+fi
 set -e
 
 # ── Phase 5: Update Discord token ──
