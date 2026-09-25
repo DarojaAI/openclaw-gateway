@@ -68,7 +68,49 @@ echo "fake openclaw: unsupported invocation: $*" >&2
 exit 64
 STUB
 	chmod +x "$TEST_BIN/openclaw"
+	# Hermetic default: shadow `pgrep` so the gateway-user resolution
+	# below never sees a real gateway process when this suite runs on a
+	# live VM. Tests 20-22 replace this stub with their own.
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$TEST_BIN/pgrep"
+	chmod +x "$TEST_BIN/pgrep"
 }
+
+# Gateway-owner fixtures: fake pgrep reporting a gateway pid, a fake
+# $GATEWAY_PROC_ROOT with the gateway's cmdline shape, a fake `stat`
+# reporting the owner, and a fake `runuser` that records its args and
+# cats the canned JSON (simulating a successful probe as the target
+# user). GATEWAY_PROC_ROOT keeps the resolver hermetic — no real
+# /proc reads when the suite runs on a live VM.
+gateway_runs_as() {
+	local owner="$1"
+	mkdir -p "$TEST_BIN/fakeproc/4242"
+	printf 'openclaw-gateway\0' >"$TEST_BIN/fakeproc/4242/cmdline"
+	cat >"$TEST_BIN/pgrep" <<STUB
+#!/usr/bin/env bash
+echo 4242
+STUB
+	cat >"$TEST_BIN/stat" <<STUB
+#!/usr/bin/env bash
+if [[ "\${2:-}" == "%U" ]]; then
+	echo "$owner"
+	exit 0
+fi
+exec /usr/bin/stat "\$@"
+STUB
+	cat >"$TEST_BIN/runuser" <<STUB
+#!/usr/bin/env bash
+echo "runuser \$*" >>"\${TEST_BIN:-/tmp}/runuser.log"
+if [[ -f "\${FAKE_OPENCLAW_OUT:-}" ]]; then cat "\$FAKE_OPENCLAW_OUT"; else echo "[]"; fi
+STUB
+	export GATEWAY_PROC_ROOT="$TEST_BIN/fakeproc"
+	chmod +x "$TEST_BIN/pgrep" "$TEST_BIN/stat" "$TEST_BIN/runuser"
+}
+
+teardown() {
+	rm -rf "$TEST_BIN"
+	unset FAKE_OPENCLAW_OUT SKIP_POST_DEPLOY_MEMORY_CHECK MEMORY_CHECK_FAIL_ON_FRESH MEMORY_CHECK_USER GATEWAY_PROC_ROOT
+}
+
 
 teardown() {
 	rm -rf "$TEST_BIN"
@@ -249,6 +291,41 @@ emit() {
 @test "parser: invalid JSON exits 3 (caller maps to exit 2)" {
 	run bash -c "echo 'not json' | python3 '$PARSER'"
 	[ "$status" -eq 3 ]
+}
+
+# ---- 20. Probes as the gateway process owner when the invoker differs ----
+# Regression for linux-desktop-seed run 36190247631: deploy.sh runs as
+# root over ssh; the gate must probe the gateway user's store, not
+# root's (agent "main" with no index fails every otherwise-green deploy).
+@test "probes as the gateway process owner when the invoker differs" {
+	gateway_runs_as nobody
+	emit '[{"agentId":"main","status":{"chunks":12,"files":3,"provider":"openai","requestedProvider":"openai","custom":{"indexIdentity":{"status":"ok","reason":""}}},"scan":{"totalFiles":3,"issues":[]}}]'
+	run "$SCRIPT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"probing memory index as gateway user 'nobody'"* ]]
+	grep -q -- "-u nobody" "$TEST_BIN/runuser.log"
+	grep -q "XDG_RUNTIME_DIR=/run/user/65534" "$TEST_BIN/runuser.log"
+}
+
+# ---- 21. MEMORY_CHECK_USER overrides process-owner detection ----
+@test "MEMORY_CHECK_USER override wins over process-owner detection" {
+	gateway_runs_as someoneelse
+	export MEMORY_CHECK_USER=nobody
+	emit '[{"agentId":"main","status":{"chunks":12,"files":3,"provider":"openai","requestedProvider":"openai","custom":{"indexIdentity":{"status":"ok","reason":""}}},"scan":{"totalFiles":3,"issues":[]}}]'
+	run "$SCRIPT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"gateway user 'nobody'"* ]]
+	grep -q -- "-u nobody" "$TEST_BIN/runuser.log"
+}
+
+# ---- 22. No runuser probe when the invoker is the gateway user ----
+@test "no runuser probe when the invoker is the gateway user" {
+	gateway_runs_as "$(id -un)"
+	emit '[{"agentId":"main","status":{"chunks":12,"files":3,"provider":"openai","requestedProvider":"openai","custom":{"indexIdentity":{"status":"ok","reason":""}}},"scan":{"totalFiles":3,"issues":[]}}]'
+	run "$SCRIPT"
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"probing memory index as gateway user"* ]]
+	[[ ! -f "$TEST_BIN/runuser.log" ]]
 }
 
 # ---- 18. Parser unit: empty array exits 4 (caller maps to exit 0 + warn) ----
