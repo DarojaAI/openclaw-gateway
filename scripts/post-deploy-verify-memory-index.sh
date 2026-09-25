@@ -43,6 +43,12 @@
 #                                     useful for prod environments where
 #                                     the index should always be built.
 #                                     Default: 0 (WARN only on fresh)
+#   MEMORY_CHECK_USER                  probe as this user instead of
+#                                     auto-detecting the gateway service
+#                                     user (owner of the running
+#                                     openclaw.mjs process). Set when the
+#                                     gateway is down or for offline
+#                                     debugging of a specific user's store.
 #
 # Refs:
 #   DarojaAI/openclaw-gateway#21      — index metadata missing
@@ -71,10 +77,66 @@ if [[ ! -f "$PARSER" ]]; then
 	log "FAIL: parser not found at $PARSER"
 	exit 2
 fi
+# ---- Probe as the gateway service user ------------------------------------
+# The L3a pipeline invokes deploy.sh over ssh as root, but the gateway
+# runs as an unprivileged desktop user; `openclaw memory status` reads
+# $HOME-scoped state (per-agent sqlite + index sidecars). Probing as
+# root inspects root's own (empty) store — agent "main" — which fails
+# every deploy even when the deployed fleet is fully healthy
+# (linux-desktop-seed run 36190247631, 2026-09-25). Resolve the user
+# that owns the running gateway and probe as that user instead.
+#
+# Resolution order:
+#   1. $MEMORY_CHECK_USER  — explicit override (debug / offline deploys)
+#   2. owner of the running gateway process
+#   3. the invoking user (previous behavior; safe when the gateway is
+#      down or user detection is unavailable)
+resolve_gateway_probe_user() {
+	if [[ -n "${MEMORY_CHECK_USER:-}" ]]; then
+		printf '%s\n' "$MEMORY_CHECK_USER"
+		return 0
+	fi
+	local proc_root="${GATEWAY_PROC_ROOT:-/proc}"
+	local pid cmd owner
+	# pgrep is only the broad candidate filter here — an anchored
+	# `pgrep -f '^openclaw-gateway$'` does not match reliably across
+	# launch contexts, and an unanchored one matches deploy.sh's own
+	# path under /opt/openclaw-gateway/ (and this gate's own script
+	# path). Read /proc/<pid>/cmdline and require an exact match:
+	#   - `openclaw-gateway` — the systemd user unit's process shape
+	#   - `*openclaw.mjs*gateway*` — the `node .../openclaw.mjs gateway`
+	#     launch shape
+	# Casual `openclaw` CLI invocations (memory index, doctor) and
+	# deploy.sh itself match neither, so a root-run deploy pipeline
+	# still resolves to the unprivileged gateway owner.
+	for pid in $(pgrep -f 'openclaw-gateway|openclaw\.mjs' 2>/dev/null || true); do
+		cmd="$(tr -d '[:space:]' <"$proc_root/$pid/cmdline" 2>/dev/null || true)"
+		if [[ "$cmd" == "openclaw-gateway" || "$cmd" == *openclaw.mjs*gateway* ]]; then
+			owner="$(stat -c %U "$proc_root/$pid" 2>/dev/null || true)"
+			if [[ -n "$owner" ]]; then
+				printf '%s\n' "$owner"
+				return 0
+			fi
+		fi
+	done
+	printf '%s\n' "$(id -un 2>/dev/null || echo root)"
+}
 
 # `openclaw memory status --json` returns a JSON array; one element per
-# agent that has memory enabled.
-status_json="$(openclaw memory status --json 2>/dev/null || true)"
+# agent that has memory enabled. When the probe user differs from the
+# invoking user, run the probe as the probe user (runuser sets HOME to
+# the target user; XDG_RUNTIME_DIR lets the CLI reach the user bus for
+# secret resolution).
+probe_user="$(resolve_gateway_probe_user)"
+invoker="$(id -un 2>/dev/null || echo root)"
+probe_prefix=()
+if [[ "$invoker" != "$probe_user" ]] && command -v runuser >/dev/null 2>&1; then
+	probe_uid="$(id -u "$probe_user" 2>/dev/null || echo 0)"
+	probe_prefix=(runuser -u "$probe_user" -- env "XDG_RUNTIME_DIR=/run/user/${probe_uid}")
+	log "INFO: probing memory index as gateway user '${probe_user}' (invoked as '${invoker}')"
+fi
+status_json="$("${probe_prefix[@]}" openclaw memory status --json 2>/dev/null || true)"
+
 if [[ -z "$status_json" ]]; then
 	log "FAIL: openclaw memory status --json returned no output"
 	exit 2
