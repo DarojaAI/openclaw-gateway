@@ -9,7 +9,7 @@ name: Validate
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +46,7 @@ jobs:
 
   bats:
     name: BATS (agent-config schema + drift)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -72,14 +72,18 @@ jobs:
 
   openclaw-binary-smoke:
     name: openclaw binary smoke (drift test prerequisite)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install openclaw at pinned version
-        env:
-          PINNED_VERSION: ${{ format('{0}', readFile('config/openclaw-version')) }}
+        # 2026-09-26: readFile is not a GitHub Actions expression function —
+        # this env block made the ENTIRE workflow unparseable, so validate.yml
+        # failed on every push with zero jobs run (run 36196483490 and every
+        # prior push; the repo has had no CI signal since the job was added).
+        # Read the pin inside the step instead.
         run: |
+          PINNED_VERSION="$(cat config/openclaw-version)"
           if [ -z "${PINNED_VERSION// }" ]; then
             echo "config/openclaw-version is empty; skipping drift smoke."
             exit 0
