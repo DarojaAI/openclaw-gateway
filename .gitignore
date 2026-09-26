@@ -4,3 +4,7 @@ config/services/viz/cache/
 config/services/viz/.server.pid
 config/services/viz/server.log
 __pycache__/
+
+# local worktrees (never commit)
+.worktrees/
+openclaw-gateway-wt-*/

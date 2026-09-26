@@ -2,10 +2,12 @@
 #
 # tests/agent-config-schema.bats
 #
-# BATS tests for schemas/agent-config.schema.json and
-# schemas/agents-lock.schema.json, plus smoke tests for
-# scripts/validate-agent-config.py and
-# scripts/generate-agents-lock.py.
+# BATS tests for schemas/agent-config.schema.json plus smoke tests
+# for scripts/validate-agent-config.py.
+#
+# 2026-09-26: the RFC-31 lockfile half (agents-lock.schema.json,
+# generate-agents-lock.py) was retired with the rest of the dormant
+# lockfile pipeline -- see the retirement PR for the evidence.
 #
 # What we guard
 # -------------
@@ -29,8 +31,7 @@
 #   use the canonical Python scripts written for this phase —
 #   the validator exercises both the manual (stdlib-only) and
 #   full (jsonschema) paths where it can.
-# - REPO_ROOT, SCHEMA_FILE, LOCKFILE_SCHEMA_FILE, VALIDATOR,
-#   EMITTER are computed once in setup() and used everywhere.
+# - REPO_ROOT, SCHEMA_FILE, VALIDATOR are computed once in setup().
 # - Negative-case tests build small inline YAML / JSON bodies and
 #   pipe them to the validator. This keeps the suite independent
 #   of yq / ajv / PyYAML when jsonschema is missing.
@@ -38,10 +39,8 @@
 setup() {
 	REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	SCHEMA_FILE="${REPO_ROOT}/schemas/agent-config.schema.json"
-	LOCKFILE_SCHEMA_FILE="${REPO_ROOT}/schemas/agents-lock.schema.json"
 	VALIDATOR="${REPO_ROOT}/scripts/validate-agent-config.py"
-	EMITTER="${REPO_ROOT}/scripts/generate-agents-lock.py"
-	export REPO_ROOT SCHEMA_FILE LOCKFILE_SCHEMA_FILE VALIDATOR EMITTER
+	export REPO_ROOT SCHEMA_FILE VALIDATOR
 }
 
 # ---- agent-config schema: structural assertions ----
@@ -110,22 +109,10 @@ setup() {
 	python3 -m py_compile "$VALIDATOR"
 }
 
-@test "emitter script is parseable Python" {
-	[ -f "$EMITTER" ]
-	python3 -m py_compile "$EMITTER"
-}
-
 @test "validator --help exits 0 and mentions --schema" {
 	run python3 "$VALIDATOR" --help
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"--schema"* ]]
-}
-
-@test "emitter --help exits 0 and lists required flags" {
-	run python3 "$EMITTER" --help
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"--config-sha"* ]]
-	[[ "$output" == *"--config"* ]]
 }
 
 @test "validator exits 2 on missing document" {
@@ -312,247 +299,5 @@ validate_json() {
 
 # ---- agents-lock schema: structural + sample document ----
 
-@test "agents-lock schema file exists and is valid JSON" {
-	[ -f "$LOCKFILE_SCHEMA_FILE" ]
-	run jq empty "$LOCKFILE_SCHEMA_FILE"
-	[ "$status" -eq 0 ]
-}
-
-@test "agents-lock schema requires schema_version and agents" {
-	run jq -e '(.required | sort) == ["agents", "schema_version"]' "$LOCKFILE_SCHEMA_FILE"
-	[ "$status" -eq 0 ]
-	[ "$output" = "true" ]
-}
-
-@test "agents-lock schema_version is the const '1'" {
-	run jq -e '.properties.schema_version.const == "1"' "$LOCKFILE_SCHEMA_FILE"
-	[ "$status" -eq 0 ]
-	[ "$output" = "true" ]
-}
-
-@test "agents-lock per-agent config_sha pattern is 40 hex chars" {
-	run jq -e '.properties.agents.patternProperties."^[a-z0-9]([a-z0-9-]*[a-z0-9])?$".properties.config_sha.pattern == "^[a-f0-9]{40}$"' "$LOCKFILE_SCHEMA_FILE"
-	[ "$status" -eq 0 ]
-	[ "$output" = "true" ]
-}
-
-@test "agents-lock per-agent required fields are repo/handle/contract_version/config_source/config_sha" {
-	run jq -e '
-		(.properties.agents.patternProperties."^[a-z0-9]([a-z0-9-]*[a-z0-9])?$".required | sort) ==
-		["config_sha", "config_source", "contract_version", "handle", "repo"]
-	' "$LOCKFILE_SCHEMA_FILE"
-	[ "$status" -eq 0 ]
-	[ "$output" = "true" ]
-}
-
-@test "agents-lock schema accepts a known-good lockfile" {
-	body='{
-		"schema_version": "1",
-		"agents": {
-			"linux-desktop-seed": {
-				"repo": "DarojaAI/linux-desktop-seed",
-				"handle": "@linux-desktop-seed",
-				"contract_version": "v1",
-				"config_source": "https://github.com/DarojaAI/linux-desktop-seed/blob/main/.openclaw/agent-config.yaml",
-				"config_sha": "f47ac10b58cc4372a5670e02b2c3d479abcdef01",
-				"last_deploy_at": "2026-06-29T00:00:00Z"
-			}
-		}
-	}'
-	validate_json "$body" >/dev/null 2>&1 || true
-	# Validate the body against the lockfile schema directly via jq+inline python.
-	local f
-	f="$(mktemp)"
-	printf '%s' "$body" >"$f"
-	run python3 -c "
-import json, sys
-with open('$LOCKFILE_SCHEMA_FILE') as fh:
-    schema = json.load(fh)
-with open('$f') as fh:
-    doc = json.load(fh)
-try:
-    import jsonschema
-    jsonschema.Draft202012Validator(schema).validate(doc)
-    print('VALID')
-    sys.exit(0)
-except ImportError:
-    print('JSCHEMA_MISSING')
-    sys.exit(0)
-except jsonschema.ValidationError as e:
-    print('INVALID:', e.message)
-    sys.exit(1)
-"
-	rm -f "$f"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"VALID"* ]] || [[ "$output" == *"JSCHEMA_MISSING"* ]]
-}
-
-@test "agents-lock schema rejects a missing required field" {
-	body='{
-		"schema_version": "1",
-		"agents": {
-			"linux-desktop-seed": {
-				"repo": "DarojaAI/linux-desktop-seed",
-				"handle": "@linux-desktop-seed",
-				"contract_version": "v1",
-				"config_source": "https://example.com"
-			}
-		}
-	}'
-	local f
-	f="$(mktemp)"
-	printf '%s' "$body" >"$f"
-	run python3 -c "
-import json, sys
-with open('$LOCKFILE_SCHEMA_FILE') as fh:
-    schema = json.load(fh)
-with open('$f') as fh:
-    doc = json.load(fh)
-try:
-    import jsonschema
-    jsonschema.Draft202012Validator(schema).validate(doc)
-    print('UNEXPECTED_PASS')
-    sys.exit(1)
-except ImportError:
-    sys.exit(0)
-except jsonschema.ValidationError as e:
-    print('REJECTED_OK')
-    sys.exit(0)
-"
-	rm -f "$f"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"REJECTED_OK"* ]] || [ "$output" = "" ]
-}
-
-@test "agents-lock schema rejects a malformed config_sha" {
-	body='{
-		"schema_version": "1",
-		"agents": {
-			"linux-desktop-seed": {
-				"repo": "DarojaAI/linux-desktop-seed",
-				"handle": "@linux-desktop-seed",
-				"contract_version": "v1",
-				"config_source": "https://example.com",
-				"config_sha": "not-a-sha"
-			}
-		}
-	}'
-	local f
-	f="$(mktemp)"
-	printf '%s' "$body" >"$f"
-	run python3 -c "
-import json, sys
-with open('$LOCKFILE_SCHEMA_FILE') as fh:
-    schema = json.load(fh)
-with open('$f') as fh:
-    doc = json.load(fh)
-try:
-    import jsonschema
-    jsonschema.Draft202012Validator(schema).validate(doc)
-    print('UNEXPECTED_PASS')
-    sys.exit(1)
-except ImportError:
-    sys.exit(0)
-except jsonschema.ValidationError as e:
-    print('REJECTED_OK')
-    sys.exit(0)
-"
-	rm -f "$f"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"REJECTED_OK"* ]] || [ "$output" = "" ]
-}
-
 # ---- emitter script ----
 
-@test "emitter produces a valid TOML [agents.<slug>] entry" {
-	body='{
-		"handle": "@linux-desktop-seed",
-		"contract_version": "v1"
-	}'
-	local cfg
-	cfg="$(mktemp)"
-	printf '%s' "$body" >"$cfg"
-	run python3 "$EMITTER" \
-		--config "$cfg" \
-		--repo "DarojaAI/linux-desktop-seed" \
-		--config-sha "f47ac10b58cc4372a5670e02b2c3d479abcdef01" \
-		--last-deploy-at "2026-06-29T00:00:00Z"
-	rm -f "$cfg"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"[agents.linux-desktop-seed]"* ]]
-	[[ "$output" == *"repo             = \"DarojaAI/linux-desktop-seed\""* ]]
-	[[ "$output" == *"handle           = \"@linux-desktop-seed\""* ]]
-	[[ "$output" == *"contract_version = \"v1\""* ]]
-	[[ "$output" == *"config_sha       = \"f47ac10b58cc4372a5670e02b2c3d479abcdef01\""* ]]
-	[[ "$output" == *"last_deploy_at   = \"2026-06-29T00:00:00Z\""* ]]
-}
-
-@test "emitter derives slug from handle when --slug is not passed" {
-	body='{"handle": "@mcp-tooling", "contract_version": "v1"}'
-	local cfg
-	cfg="$(mktemp)"
-	printf '%s' "$body" >"$cfg"
-	run python3 "$EMITTER" \
-		--config "$cfg" \
-		--repo "DarojaAI/mcp-tooling" \
-		--config-sha "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	rm -f "$cfg"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"[agents.mcp-tooling]"* ]]
-}
-
-@test "emitter derives repo from --config-source" {
-	body='{"handle": "@x", "contract_version": "v1"}'
-	local cfg
-	cfg="$(mktemp)"
-	printf '%s' "$body" >"$cfg"
-	run python3 "$EMITTER" \
-		--config "$cfg" \
-		--config-source "https://github.com/DarojaAI/darojaai_architect/blob/main/.openclaw/agent-config.yaml" \
-		--config-sha "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	rm -f "$cfg"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"repo             = \"DarojaAI/darojaai_architect\""* ]]
-	[[ "$output" == *"config_source    = \"https://github.com/DarojaAI/darojaai_architect/blob/main/.openclaw/agent-config.yaml\""* ]]
-}
-
-@test "emitter rejects a config_sha that is not 40 hex chars" {
-	body='{"handle": "@x", "contract_version": "v1"}'
-	local cfg
-	cfg="$(mktemp)"
-	printf '%s' "$body" >"$cfg"
-	run python3 "$EMITTER" \
-		--config "$cfg" \
-		--config-sha "short"
-	rm -f "$cfg"
-	[ "$status" -eq 2 ]
-	[[ "$output" == *"config-sha"* ]]
-}
-
-@test "emitter emits a config_source by default" {
-	body='{"handle": "@x", "contract_version": "v1"}'
-	local cfg
-	cfg="$(mktemp)"
-	printf '%s' "$body" >"$cfg"
-	run python3 "$EMITTER" \
-		--config "$cfg" \
-		--repo "DarojaAI/x" \
-		--config-sha "cccccccccccccccccccccccccccccccccccccccc"
-	rm -f "$cfg"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"config_source    = \"https://github.com/DarojaAI/x/blob/main/.openclaw/agent-config.yaml\""* ]]
-}
-
-@test "emitter output contains no last_deploy_at line when omitted" {
-	body='{"handle": "@x", "contract_version": "v1"}'
-	local cfg
-	cfg="$(mktemp)"
-	printf '%s' "$body" >"$cfg"
-	run python3 "$EMITTER" \
-		--config "$cfg" \
-		--repo "DarojaAI/x" \
-		--config-sha "dddddddddddddddddddddddddddddddddddddddd"
-	rm -f "$cfg"
-	[ "$status" -eq 0 ]
-	! [[ "$output" == *"last_deploy_at"* ]]
-}

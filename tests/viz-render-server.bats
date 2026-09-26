@@ -138,7 +138,17 @@ http.get(u, r => {
   [ "$output" = "400" ]
 }
 
+_have_playwright_browser() {
+  # Rendering needs a chromium binary. `npm install` pulls the
+  # playwright package but NOT the browser (that's `npx playwright
+  # install chromium`, a ~300MB download we don't want in CI). These
+  # two render tests are the only consumers; skip (honestly, with a
+  # reason) on machines without the browser instead of failing.
+  ls "$HOME/.cache/ms-playwright" 2>/dev/null | grep -q chromium
+}
+
 @test "viz server: /render returns image/png for valid mermaid" {
+  _have_playwright_browser || skip "no playwright chromium browser installed (render path needs one)"
   # Run the request in the foreground (not via `run`) and capture status to a file.
   # This avoids BATS truncating the long output that comes from a successful render.
   rm -f /tmp/diagram.png /tmp/render-status
@@ -172,6 +182,7 @@ req.write(body); req.end();
 }
 
 @test "viz server: /render caches by content hash" {
+  _have_playwright_browser || skip "no playwright chromium browser installed (render path needs one)"
   # Use a unique body for this test (different from the other render test)
   # so we don't hit a cache file from a previous test run.
   rm -f /tmp/d1.png /tmp/d2.png

@@ -9,7 +9,7 @@ name: Validate
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +46,7 @@ jobs:
 
   bats:
     name: BATS (agent-config schema + drift)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -72,14 +72,26 @@ jobs:
 
   openclaw-binary-smoke:
     name: openclaw binary smoke (drift test prerequisite)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install openclaw at pinned version
-        env:
-          PINNED_VERSION: ${{ format('{0}', readFile('config/openclaw-version')) }}
+      # 2026-09-26: this job ran `bats` without ever installing it (the
+      # workflow never parsed before, so the gap was invisible -- exit
+      # 127 on the job's first-ever execution).
+      - name: Install bats
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq bats
+
+      - name: Install openclaw at pinned version
+        # 2026-09-26: readFile is not a GitHub Actions expression function —
+        # this env block made the ENTIRE workflow unparseable, so validate.yml
+        # failed on every push with zero jobs run (run 36196483490 and every
+        # prior push; the repo has had no CI signal since the job was added).
+        # Read the pin inside the step instead.
+        run: |
+          PINNED_VERSION="$(cat config/openclaw-version)"
           if [ -z "${PINNED_VERSION// }" ]; then
             echo "config/openclaw-version is empty; skipping drift smoke."
             exit 0
@@ -95,7 +107,12 @@ jobs:
           PINNED="$(cat config/openclaw-version)"
           INSTALLED="$(openclaw --version 2>&1 | head -1)"
           echo "pinned=${PINNED} installed=${INSTALLED}"
+          # `openclaw --version` emits "OpenClaw <pin> (<sha>)" -- the
+          # original "${PINNED}"* pattern was start-anchored on a string
+          # that starts with "OpenClaw ", so it could never match (this
+          # job had never executed before validate.yml was fixed, so
+          # the bug was invisible).
           case "${INSTALLED}" in
-            "${PINNED}"*) echo "OK: pin matches binary"; exit 0 ;;
+            *"${PINNED}"*) echo "OK: pin matches binary"; exit 0 ;;
             *) echo "FAIL: pin ${PINNED} does not match installed ${INSTALLED}"; exit 1 ;;
           esac
