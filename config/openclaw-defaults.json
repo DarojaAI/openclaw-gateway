@@ -4,10 +4,7 @@
     "defaults": {
       "compaction": {
         "keepRecentTokens": 4000,
-        "maxHistoryShare": 0.1,
-        "mode": "default",
-        "reserveTokens": 20000,
-        "reserveTokensFloor": 20000
+        "mode": "default"
       },
       "maxConcurrent": 4,
       "model": "openrouter/minimax/minimax-m2.7",
@@ -65,20 +62,33 @@
         "enabled": true,
         "idleHours": 24,
         "maxAgeHours": 0,
-        "spawnAcpSessions": true
+        "spawnSessions": true
       },
-      "token": "__DISCORD_BOT_TOKEN__"
+      "token": "__DISCORD_BOT_TOKEN__",
+      "dmPolicy": "pairing"
     },
     "a2a": {
       "enabled": true,
       "advertisedUrl": "https://openclaw.example.com",
       "peers": {
-        "darojaai_architect":   { "token": "${A2A_ARCHITECT_TOKEN}" },
-        "daroja_coding_agent":  { "token": "${A2A_CODING_TOKEN}" },
-        "dev_nexus":            { "token": "${A2A_DEV_NEXUS_TOKEN}" },
-        "daroja_tenancy":       { "token": "${A2A_TENANCY_TOKEN}" },
-        "daroja_security_agent": { "token": "${A2A_SECURITY_TOKEN}" },
-        "linux_desktop_seed":   { "token": "${A2A_LDS_TOKEN}" }
+        "darojaai_architect": {
+          "token": "${A2A_ARCHITECT_TOKEN}"
+        },
+        "daroja_coding_agent": {
+          "token": "${A2A_CODING_TOKEN}"
+        },
+        "dev_nexus": {
+          "token": "${A2A_DEV_NEXUS_TOKEN}"
+        },
+        "daroja_tenancy": {
+          "token": "${A2A_TENANCY_TOKEN}"
+        },
+        "daroja_security_agent": {
+          "token": "${A2A_SECURITY_TOKEN}"
+        },
+        "linux_desktop_seed": {
+          "token": "${A2A_LDS_TOKEN}"
+        }
       },
       "exposeAgents": [
         "darojaai_architect",
@@ -95,7 +105,6 @@
   "commands": {
     "native": "auto",
     "nativeSkills": "auto",
-    "ownerDisplay": "raw",
     "restart": true
   },
   "gateway": {
@@ -108,7 +117,6 @@
     }
   },
   "meta": {
-    "lastTouchedAt": "2026-05-06T15:30:04Z",
     "lastTouchedVersion": "2026.4.26"
   },
   "models": {

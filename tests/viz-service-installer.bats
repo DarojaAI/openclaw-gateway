@@ -129,13 +129,20 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "viz unit: has the right lifecycle hooks" {
-  # Guards the "Before/PartOf" wiring we promised the gateway
+@test "viz unit: lifecycle is decoupled from the gateway (2026-06-09 regression)" {
+  # 2026-06-09 incident regression guard, inverted from the original
+  # test: the unit used to carry Before=/PartOf= wiring toward the
+  # gateway, which made a viz service reload SIGTERM the gateway.
+  # PartOf= cascades stop/restart events to the parent unit. The unit's
+  # own header now forbids reintroducing them; this test enforces that.
   local unit="etc/systemd/user/openclaw-viz.service"
   [ -f "$unit" ]
-  grep -q "^Before=openclaw-gateway.service$" "$unit"
-  grep -q "^PartOf=openclaw-gateway.service$" "$unit"
-  grep -q "^After=network-online.target$" "$unit"
+  # HARD guards: no lifecycle cascade toward the gateway.
+  ! grep -q "^Before=" "$unit"
+  ! grep -q "^PartOf=" "$unit"
+  # Soft dependency only: start-order hint + Wants.
+  grep -q "^After=network-online.target openclaw-gateway.service$" "$unit"
+  grep -q "^Wants=openclaw-gateway.service$" "$unit"
   # Restart limits match the gateway's (avoid restart storms)
   grep -q "^StartLimitBurst=3$" "$unit"
   grep -q "^StartLimitIntervalSec=300$" "$unit"

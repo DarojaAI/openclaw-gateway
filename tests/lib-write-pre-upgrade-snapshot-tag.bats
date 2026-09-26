@@ -42,8 +42,12 @@ teardown() {
 	# ... whichever is permitted by the CI sandbox.
 	run bash "$HELPER"
 	[ "$status" -eq 0 ]
-	# Tag is exported to caller env.
-	[ -n "$PRE_UPGRADE_SNAPSHOT_TAG" ]
+	# NOTE: `run` executes in a subshell, so an export inside the
+	# helper can NEVER propagate back to this shell -- the original
+	# `[ -n "$PRE_UPGRADE_SNAPSHOT_TAG" ]` assertion was unsatisfiable
+	# by construction (these tests had never run in CI, so the bug
+	# survived). The tag's observable contract is the printed
+	# assignment line + the sentinel file; assert on those.
 	[[ "$output" == *"PRE_UPGRADE_SNAPSHOT_TAG="* ]]
 	# Sentinel file under $HOME was written.
 	[ -f "$HOME/.openclaw/pre-upgrade-snapshot-tag" ]
@@ -51,9 +55,19 @@ teardown() {
 }
 
 @test "first-deploy baseline tag has YYYY-MM-DDTHH-MM-SS format with -baseline suffix" {
+	# The helper hardcodes /var/lib/openclaw-upgrade-snapshots; when that
+	# dir exists with real snapshots (any prod/dev box), the helper
+	# legitimately picks the mtime-newest real tag instead of writing a
+	# fresh -baseline -- the format assertion is only reachable on a
+	# machine with no upgrade history (CI runners, fresh VMs).
+	if [ -d /var/lib/openclaw-upgrade-snapshots ] && [ -n "$(ls -A /var/lib/openclaw-upgrade-snapshots 2>/dev/null)" ]; then
+		skip "/var/lib/openclaw-upgrade-snapshots has real snapshots; helper picks mtime-newest, not baseline"
+	fi
 	run bash "$HELPER"
 	[ "$status" -eq 0 ]
-	[[ "$PRE_UPGRADE_SNAPSHOT_TAG" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z?-baseline$ ]]
+	# See the subshell note above: assert the format on the sentinel
+	# file (the helper's durable side effect), not a subshell env var.
+	[[ "$(cat "$HOME/.openclaw/pre-upgrade-snapshot-tag")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z?-baseline$ ]]
 }
 
 # ── inherited tag from caller env wins ────────────────────────────
@@ -92,19 +106,23 @@ teardown() {
 	run bash "$HELPER"
 	[ "$status" -eq 0 ]
 	grep -q '^PRE_UPGRADE_SNAPSHOT_TAG=' "$GITHUB_ENV"
-	# The GITHUB_ENV line and the in-shell exported value must match.
+	# The GITHUB_ENV line and the sentinel file (the helper's two
+	# durable artifacts) must carry the same tag. The in-shell env var
+	# is unreachable through `run` (subshell); the durable artifacts
+	# are the contract.
 	local github_value
 	github_value="$(grep '^PRE_UPGRADE_SNAPSHOT_TAG=' "$GITHUB_ENV" | cut -d= -f2)"
-	[ "$github_value" = "$PRE_UPGRADE_SNAPSHOT_TAG" ]
+	[ "$github_value" = "$(cat "$HOME/.openclaw/pre-upgrade-snapshot-tag")" ]
 }
 
 @test "skips GITHUB_ENV write when GITHUB_ENV is unset (degrades gracefully)" {
 	unset GITHUB_ENV
 	run bash "$HELPER"
 	[ "$status" -eq 0 ]
-	# Still exported to caller shell + sentinel file written.
-	[ -n "$PRE_UPGRADE_SNAPSHOT_TAG" ]
+	# Degrades gracefully: helper exits 0 and the sentinel file is
+	# still written (subshell note above re: the env var).
 	[ -f "$HOME/.openclaw/pre-upgrade-snapshot-tag" ]
+	grep -q '.' "$HOME/.openclaw/pre-upgrade-snapshot-tag"
 }
 
 # ── sentinel file is on disk + readable ────────────────────────────
@@ -118,12 +136,19 @@ teardown() {
 }
 
 @test "sentinel file's content matches PRE_UPGRADE_SNAPSHOT_TAG (no trailing newline corruption)" {
+	: > "$GITHUB_ENV"  # helper appends only when the file exists (see test 5)
 	run bash "$HELPER"
 	[ "$status" -eq 0 ]
 	# Read back the exact bytes to assert no extra \r or stripping.
+	# The in-shell env var is unreachable through `run` (subshell); the
+	# GITHUB_ENV write carries the same value, so compare the two
+	# durable artifacts byte-for-byte.
 	local content
 	content="$(cat "$HOME/.openclaw/pre-upgrade-snapshot-tag")"
-	[ "$content" = "$PRE_UPGRADE_SNAPSHOT_TAG" ]
+	local github_value
+	github_value="$(grep '^PRE_UPGRADE_SNAPSHOT_TAG=' "$GITHUB_ENV" | cut -d= -f2)"
+	[ -n "$content" ]
+	[ "$content" = "$github_value" ]
 }
 
 # ── contract with deploy.sh ───────────────────────────────────────

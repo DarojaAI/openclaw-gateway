@@ -73,6 +73,14 @@ _seed_trajectory() {
     local session_id="$2"
     local body="$3"
     mkdir -p "$OPENCLAW_AGENTS_ROOT/$agent_id/sessions"
+    # 2026-09-26: the hardcoded "2026-06-13" ts values aged out of the
+    # days=7 windows and time-bombed the bounded-report tests (they had
+    # never run in CI, so nobody noticed). Rewrite every ts to now so
+    # the corpus is always inside any window; a test that needs an old
+    # event must construct it explicitly outside this helper.
+    local now_ts
+    now_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    body="$(printf '%s' "$body" | sed 's/"ts":"[^"]*"/"ts":"'"$now_ts"'"/g')"
     printf '%s\n' "$body" > "$OPENCLAW_AGENTS_ROOT/$agent_id/sessions/${session_id}.trajectory.jsonl"
 }
 
@@ -354,8 +362,10 @@ from pathlib import Path
 print(cost_monitor.handle_cost_report_command(days=7, agents_root=Path('$OPENCLAW_AGENTS_ROOT'), config_path=Path('$WORK_CONFIG')))
 "
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Active Agents"* ]]
-    [[ "$output" == *": 2"* ]]
+    # Output moved to bold-markdown ("**Active Agents:** 2") when the
+    # report became Discord-renderable; the old *": 2"* pattern predates
+    # that (this suite never ran in CI, so the drift survived).
+    [[ "$output" == *"Active Agents:** 2"* ]]
     [[ "$output" == *"Top Agents"* ]]
     [[ "$output" == *"alpha"* ]]
     [[ "$output" == *"beta"* ]]

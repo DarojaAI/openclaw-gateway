@@ -66,7 +66,7 @@ setup() {
 		-H 'Accept: application/vnd.github.raw' \
 		--jq '.' >"$schema_tmp" 2>/dev/null; then
 		rm -f "$schema_tmp"
-		skip "could not fetch schema from seed repo; skipping (CI will enforce)"
+		skip "could not fetch schema from seed repo (CI's github.token cannot read the private LDS repo cross-repo -- this check only truly runs from an authenticated operator machine)"
 	fi
 	run python3 -c "
 import json, sys
