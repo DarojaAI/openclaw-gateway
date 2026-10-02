@@ -8,29 +8,43 @@ This contract defines the wire surface for the per-invocation runtime
 pre-flight gate: the deterministic, observable, pre-LLM-call check that
 every invocation passes through before any LLM call lands.
 
-## Scope (P0)
+## Scope (P0 + P1)
 
-- **Operator-attribution** — the invocation's `actor` must resolve to a
-  known principal (id or `@handle` in the principals registry).
-- **Structured telemetry** — every decision (allow / reject / modify)
-  emits one `preflight.decision.v1` event.
-- **Deterministic allow/reject** surface with process exit codes the
-  hook layer can act on.
+- **P0 — Operator-attribution** — the invocation's `actor` must resolve
+  to a known principal (id or `@handle` in the principals registry).
+- **P0 — Structured telemetry** — every decision (allow / reject /
+  modify) emits one `preflight.decision.v1` event.
+- **P0 — Deterministic allow/reject** surface with process exit codes
+  the hook layer can act on.
+- **P1 — Tenant-model validation** — when `TENANCY_BROKER_URL` is wired,
+  the invocation's tenant context must be present and consistent with
+  the daroja-tenancy round-2 contract (`counterparty_id` /
+  `client_id` / `project_id` triple, verified against
+  `POST /auth/verify`). Missing/invalid context rejects fail-closed.
+  When unwired, the check is `skipped` (recorded in the event) so
+  environments without tenancy keep working.
 
 Later phases of epic #1857 add checks without changing the wire format:
-P1 tenant-model validation (`counterparty_id`/`client_id`/`project_id`
-vs daroja-tenancy), P2 capability-consent (L-001 §3), P3
-routing-posture (L-001 §6).
+P2 capability-consent (L-001 §3), P3 routing-posture (L-001 §6).
 
 ## Invocation (hook entry point)
 
 ```
 preflight-gate.py evaluate --actor <x> --agent <y> [--capability <z>] \
+    [--tenant-jwt <jwt>] [--audience <a>] \
+    [--counterparty-id <c> --client-id <c> --project-id <p>] \
     [--principals <file>] [--event-log <file>]
 ```
 
 `--actor` is the invoking principal (id or `@handle`). `--agent` is the
 target agent id. `--capability` is informational in P0.
+
+P1 tenant context: pass the tenant JWT (`--tenant-jwt`, optionally with
+`--audience` for the expected-audience check) to verify against the
+broker; or pass the direct triple (`--counterparty-id --client-id
+--project-id`) for the presence-only path. When `TENANCY_BROKER_URL` is
+set and neither is supplied, the invocation rejects as
+`tenant-context-missing`.
 
 ## Decision + exit codes
 
