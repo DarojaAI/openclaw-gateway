@@ -1,43 +1,56 @@
 #!/usr/bin/env python3
-"""Pre-flight gate (P0) — per-invocation operator-attribution check.
+"""Pre-flight gate (P0+P1) — per-invocation pre-LLM gate.
 
 Part of epic `DarojaAI/linux-desktop-seed#1857` (owner:
-`linux_desktop_seed`). Work item: `DarojaAI/openclaw-gateway#119`.
+`linux_desktop_seed`). Work items: `DarojaAI/openclaw-gateway#119`
+(P0), `DarojaAI/openclaw-gateway#121` (P1).
 
 What this is
 ------------
 A deterministic, observable, pre-LLM-call gate. Before any LLM call
-lands, the runtime hook layer invokes this script; the script resolves
-the invocation's ``actor`` against a known-principals registry and
-either allows or rejects. Missing/unknown attribution fails CLOSED
-(reject). Every decision emits a structured telemetry event so
-downstream lanes can subscribe (audit, cost attribution, handoff
-thresholds).
+lands, the runtime hook layer invokes this script; the script checks:
 
-Scope (P0)
-----------
-- Operator-attribution: actor must resolve to a known principal.
-- Structured telemetry: one ``preflight.decision.v1`` JSON line per
-  invocation (stdout + optional event log file).
-- Deterministic allow/reject surface + exit codes the hook can act on.
+- (P0) operator-attribution: the invocation's ``actor`` resolves to a
+  known principal in the registry;
+- (P1) tenant-model: when a daroja-tenancy broker is wired
+  (``TENANCY_BROKER_URL``), the invocation's tenant context
+  (counterparty/client/project triple) is present and consistent with
+  the round-2 contract.
 
-NOT in P0 (later phases of epic #1857): tenant-model validation (P1),
-capability-consent (P2), routing-posture (P3). The decision surface is
-shaped so those phases add checks without changing the wire format.
+Everything fails CLOSED (reject). Every decision emits a structured
+``preflight.decision.v1`` telemetry event so downstream lanes can
+subscribe (audit, cost attribution, handoff thresholds).
+
+Scope
+-----
+- P0: operator-attribution + structured telemetry + allow/reject surface.
+- P1: tenant-model validation against the round-2 broker surface
+  (``POST /auth/verify`` → ``{triple, valid, exp}``; triple =
+  ``counterparty_id``/``client_id``/``project_id``). When the broker is
+  NOT wired (env unset), the tenant check is skipped and recorded as
+  ``tenant: "skipped"`` — environments without tenancy keep working.
+
+NOT in this file yet (later phases of epic #1857): capability-consent
+(P2), routing-posture (P3). The decision surface is shaped so those
+phases add checks without changing the wire format.
 
 Wire surface v1 (see docs/contracts/preflight-v1.md)
 ----------------------------------------------------
 - Invocation: CLI args ``evaluate --actor <x> --agent <y>
-  [--capability <z>] [--principals <file>] [--event-log <file>]``.
+  [--capability <z>] [--tenant-jwt <jwt>] [--audience <a>]
+  [--counterparty-id .. --client-id .. --project-id ..]
+  [--principals <file>] [--event-log <file>]``.
 - Decision: JSON on stdout + exit code:
-    0  ALLOW   (actor known, agent present)
-    1  REJECT  (actor missing/unknown, agent missing — fail-closed)
+    0  ALLOW   (actor known, agent present, tenant ok/skipped)
+    1  REJECT  (any check failed — fail-closed)
     2  CONFIG/USAGE error (also fail-closed: hook treats !=0 as block)
 - Event: one JSON object per invocation:
 
     {"event": "preflight.decision.v1", "timestamp": <ISO>,
      "agentId": ..., "actor": ..., "capability": ...,
-     "decision": "allow"|"reject", "reason": ..., "principalKnown": bool}
+     "decision": "allow"|"reject", "reason": ..., "principalKnown": bool,
+     "tenant": "ok"|"invalid"|"missing"|"skipped",
+     "triple": {counterparty_id, client_id, project_id}?}
 
 - Principals registry: JSON file (default
   ``config/preflight-principals.json`` in the repo checkout; override
@@ -47,13 +60,16 @@ Wire surface v1 (see docs/contracts/preflight-v1.md)
 Subcommands
 -----------
 - ``evaluate`` — run the gate for one invocation (the hook entry point).
-- ``--check`` — print gate state (registry path, principal count) and
-  exit 0; exits non-zero if the registry is missing/invalid.
+- ``--check`` — print gate state (registry path, principal count,
+  tenant broker wiring) and exit 0; exits non-zero if the registry is
+  missing/invalid.
 
 Environment
 -----------
 - ``PREFLIGHT_PRINCIPALS_FILE``  (optional) override principals registry path
 - ``PREFLIGHT_EVENT_LOG``        (optional) append decision events to this file
+- ``TENANCY_BROKER_URL``         (optional) daroja-tenancy broker base URL;
+                                 when set, the tenant check is enforced
 
 Exit codes
 ----------
@@ -66,6 +82,8 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -106,6 +124,68 @@ def evaluate(
     if not known:
         return _decision(now, actor, agent_id, capability, "reject", "actor-unknown", False)
     return _decision(now, actor, agent_id, capability, "allow", "actor-known", True)
+
+
+def tenant_check(
+    jwt: str | None,
+    audience: str | None,
+    counterparty_id: str | None,
+    client_id: str | None,
+    project_id: str | None,
+) -> dict[str, Any]:
+    """P1 tenant-model check against the daroja-tenancy round-2 broker.
+
+    Active ONLY when ``TENANCY_BROKER_URL`` is set (deploy wires it via
+    env; DAT contract). When unwired, the check is skipped and recorded
+    as ``status: "skipped"`` so environments without tenancy keep
+    working (P0 behavior unchanged).
+
+    When active:
+      - JWT path: ``POST <broker>/auth/verify`` with the JWT (+ optional
+        expected audience); the broker returns ``{triple, valid, exp}``.
+        ``valid != true`` or a failed/unreachable call => fail-closed
+        reject.
+      - Direct-triple path (no JWT): all three ids present and non-empty
+        satisfies the presence requirement.
+      - Neither => ``status: "missing"`` (reject).
+
+    Returns ``{"status": ..., "reason": ..., "triple": {...}?}``.
+    """
+    broker = os.environ.get("TENANCY_BROKER_URL", "").strip()
+    if not broker:
+        return {"status": "skipped", "reason": "tenant-broker-unwired"}
+
+    if jwt:
+        try:
+            payload: dict[str, Any] = {"jwt": jwt}
+            if audience:
+                payload["expected_audience"] = audience
+            req = urllib.request.Request(
+                broker.rstrip("/") + "/auth/verify",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:  # noqa: BLE001 — fail-closed on any transport error
+            return {"status": "invalid", "reason": "tenant-broker-unreachable", "detail": str(e)}
+        triple = body.get("triple")
+        if not body.get("valid") or not isinstance(triple, dict):
+            return {"status": "invalid", "reason": "tenant-jwt-invalid", "triple": triple}
+        return {"status": "ok", "reason": "tenant-jwt-verified", "triple": triple}
+
+    if counterparty_id and client_id and project_id:
+        return {
+            "status": "ok",
+            "reason": "tenant-triple-present",
+            "triple": {
+                "counterparty_id": counterparty_id,
+                "client_id": client_id,
+                "project_id": project_id,
+            },
+        }
+    return {"status": "missing", "reason": "tenant-context-missing"}
 
 
 def load_principals(path: str | os.PathLike | None) -> list[dict[str, Any]]:
@@ -180,6 +260,12 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--actor", help="Invoking principal (id or @handle); empty/missing => reject")
     ev.add_argument("--agent", dest="agent_id", help="Target agent id; empty/missing => reject")
     ev.add_argument("--capability", help="Requested capability (informational in P0)")
+    # P1 tenant-model context.
+    ev.add_argument("--tenant-jwt", help="Tenant JWT to verify against the daroja-tenancy broker")
+    ev.add_argument("--audience", help="Expected audience for the tenant JWT")
+    ev.add_argument("--counterparty-id", help="Direct tenant triple: counterparty id (no-JWT path)")
+    ev.add_argument("--client-id", help="Direct tenant triple: client id (no-JWT path)")
+    ev.add_argument("--project-id", help="Direct tenant triple: project id (no-JWT path)")
 
     args = parser.parse_args(argv)
 
@@ -193,7 +279,9 @@ def main(argv: list[str] | None = None) -> int:
         registry_path = Path(
             args.principals or os.environ.get("PREFLIGHT_PRINCIPALS_FILE") or DEFAULT_PRINCIPALS
         )
+        broker = os.environ.get("TENANCY_BROKER_URL", "").strip()
         print(f"preflight-gate: registry={registry_path} principals={len(principals)}")
+        print(f"preflight-gate: tenant-broker={'wired' if broker else 'unwired (check skipped)'}")
         return 0
 
     if args.command != "evaluate":
@@ -215,6 +303,23 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     decision = evaluate(args.actor, args.agent_id, args.capability, principals)
+
+    # P1: tenant-model check (active only when TENANCY_BROKER_URL wired).
+    tenant = tenant_check(
+        args.tenant_jwt,
+        args.audience,
+        args.counterparty_id,
+        args.client_id,
+        args.project_id,
+    )
+    decision["tenant"] = tenant["status"]
+    if tenant.get("triple"):
+        decision["triple"] = tenant["triple"]
+    # Attribution passed but tenant context missing/invalid => fail-closed.
+    if decision["decision"] == "allow" and tenant["status"] in ("invalid", "missing"):
+        decision["decision"] = "reject"
+        decision["reason"] = tenant["reason"]
+
     _emit(decision, args.event_log)
     print(json.dumps(decision))
     return 0 if decision["decision"] == "allow" else 1
