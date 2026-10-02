@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "_note": "EXAMPLE DATA - copy per environment and replace with real agent capability grants before wiring. Not production data. See README.md in this directory.",
+  "consent": {
+    "daroja-lawyer-agent": {
+      "draft_redline": "granted",
+      "external_send": "revoked"
+    },
+    "daroja-finance-agent": {
+      "invoice_reconcile": "granted",
+      "wire_transfer": "revoked"
+    },
+    "linux_desktop_seed": {
+      "lane_maintenance": "granted",
+      "production_deploy": "revoked"
+    }
+  }
+}

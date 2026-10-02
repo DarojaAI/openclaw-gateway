@@ -148,6 +148,114 @@ The active routing-matrix route set per agent (L-001 §6). Wired with
 `posture: "skipped"` (P0/P1/P2 behavior unchanged). Wired but
 missing/invalid file ⇒ exit 2 (config error, fail-closed).
 
+## Runtime-hook invocation example (P4 rollout)
+
+P4 downstream rollout wiring: a `before_route_inbound_message` runtime
+hook calls `evaluate` once per inbound message, before any LLM call
+lands, and maps the exit code onto the invocation outcome. The examples
+below run against the EXAMPLE registries in
+`config/examples/preflight/` (pilot agent set: `daroja-lawyer-agent`,
+`daroja-finance-agent`, infra lane `linux_desktop_seed`) — placeholder
+data the deploy operator copies per environment and fills with real
+env-specific values (DAT contract: canonical `config/preflight-*.json`
+stay empty templates; env-specific paths are injected at deploy).
+
+### Deploy wiring (env injection)
+
+```bash
+export PREFLIGHT_PRINCIPALS_FILE=/etc/daroja/preflight/principals.json
+export PREFLIGHT_CONSENT_FILE=/etc/daroja/preflight/consent.json
+export PREFLIGHT_POSTURE_FILE=/etc/daroja/preflight/posture.json
+export PREFLIGHT_EVENT_LOG=/var/log/daroja/preflight-decisions.jsonl
+export TENANCY_BROKER_URL="https://tenancy.example.internal"  # optional; unset => tenant check skipped
+```
+
+### Hook pseudocode
+
+```bash
+before_route_inbound_message() {
+    # Hook context from the inbound message envelope:
+    #   ACTOR      invoking principal (id or @handle)
+    #   AGENT      target agent id
+    #   CAPABILITY requested capability
+    #   ROUTE      routing-matrix route (L-001 §6)
+    #   TENANT_*   tenant triple (counterparty/client/project)
+    python3 scripts/preflight-gate.py evaluate \
+        --actor "$ACTOR" \
+        --agent "$AGENT" \
+        --capability "$CAPABILITY" \
+        --route "$ROUTE" \
+        --counterparty-id "$TENANT_COUNTERPARTY_ID" \
+        --client-id "$TENANT_CLIENT_ID" \
+        --project-id "$TENANT_PROJECT_ID"
+    case $? in
+        0) ;;                                      # ALLOW -> proceed to the LLM call
+        1) reject_invocation "preflight" ;;        # gate reject -> block the invocation
+        2) reject_invocation "preflight-config"    # config error -> block + alert operator
+           alert_operator ;;
+    esac
+}
+```
+
+Exit-code handling: the hook treats **any non-zero exit as a block**
+(0 = allow, 1 = gate reject, 2 = registry/config error — also
+fail-closed). The `preflight.decision.v1` event is emitted by the gate
+on every decision and appended to `PREFLIGHT_EVENT_LOG`, so the hook
+never needs to synthesize its own audit record.
+
+### Worked examples against the example registries
+
+For a local run against the repo examples, point the env vars at the
+example files:
+
+```bash
+export PREFLIGHT_PRINCIPALS_FILE=$PWD/config/examples/preflight/principals.example.json
+export PREFLIGHT_CONSENT_FILE=$PWD/config/examples/preflight/consent.example.json
+export PREFLIGHT_POSTURE_FILE=$PWD/config/examples/preflight/posture.example.json
+```
+
+`--check` (operator smoke, exit 0):
+
+```console
+$ python3 scripts/preflight-gate.py --check
+preflight-gate: registry=.../config/examples/preflight/principals.example.json principals=2
+preflight-gate: tenant-broker=unwired (check skipped)
+preflight-gate: consent-registry=wired
+preflight-gate: posture-registry=wired
+```
+
+**ALLOW** — known operator, granted capability, active route
+(`TENANCY_BROKER_URL` unset in this example ⇒ `tenant: "skipped"`; when
+wired, the same invocation verifies the triple against the broker):
+
+```console
+$ python3 scripts/preflight-gate.py evaluate \
+      --actor @example-operator-0001 --agent daroja-lawyer-agent \
+      --capability draft_redline --route legal_redline \
+      --counterparty-id EXAMPLE-cp-001 \
+      --client-id EXAMPLE-client-001 --project-id EXAMPLE-project-001
+{"event": "preflight.decision.v1", "timestamp": "2026-10-02T19:23:30Z", "agentId": "daroja-lawyer-agent", "actor": "@example-operator-0001", "capability": "draft_redline", "decision": "allow", "reason": "actor-known", "principalKnown": true, "tenant": "skipped", "consent": "ok", "posture": "ok"}
+# exit 0 -> hook proceeds to the LLM call
+```
+
+**REJECT** — capability revoked in the consent registry (L-001 §3):
+
+```console
+$ python3 scripts/preflight-gate.py evaluate \
+      --actor @example-operator-0001 --agent daroja-lawyer-agent \
+      --capability external_send --route legal_redline \
+      --counterparty-id EXAMPLE-cp-001 \
+      --client-id EXAMPLE-client-001 --project-id EXAMPLE-project-001
+{"event": "preflight.decision.v1", "timestamp": "2026-10-02T19:23:30Z", "agentId": "daroja-lawyer-agent", "actor": "@example-operator-0001", "capability": "external_send", "decision": "reject", "reason": "consent-revoked", "principalKnown": true, "tenant": "skipped", "consent": "revoked", "posture": "ok"}
+# exit 1 -> hook blocks the invocation
+```
+
+Other reject paths carry their own `reason` codes (`actor-unknown`,
+`posture-mismatch`, `consent-missing`, …) per the event section above.
+These exact invocations are pinned by `tests/preflight-examples.bats`
+against the example registries, so the documented outcomes cannot drift
+from the gate's behavior.
+
 ## Subscription surface (P1+ consumers)
 
 - **Audit / incident forensics** — the event stream is the
