@@ -30,17 +30,25 @@ every invocation passes through before any LLM call lands.
   fail-closed — silent capability introductions are blocked pre-flight.
   When unwired, the check is `skipped` (recorded in the event) so
   environments without the consent layer keep P0/P1 behavior.
+- **P3 — Routing-posture (L-001 §6)** — when a posture registry is
+  wired (`PREFLIGHT_POSTURE_FILE` set or `--posture-file` given), the
+  invocation's route must be in the agent's active routing-matrix set.
+  No route, agent with no route set, or a route outside the active set
+  rejects fail-closed. When unwired, the check is `skipped` (recorded
+  in the event) so environments without the posture layer keep
+  P0/P1/P2 behavior.
 
-Later phases of epic #1857 add checks without changing the wire format:
-P3 routing-posture (L-001 §6).
+Later phases of epic #1857 add features without changing the wire
+format (P4 is the downstream rollout of these checks).
 
 ## Invocation (hook entry point)
 
 ```
 preflight-gate.py evaluate --actor <x> --agent <y> [--capability <z>] \
-    [--tenant-jwt <jwt>] [--audience <a>] \
+    [--route <r>] [--tenant-jwt <jwt>] [--audience <a>] \
     [--counterparty-id <c> --client-id <c> --project-id <p>] \
-    [--consent-file <file>] [--principals <file>] [--event-log <file>]
+    [--consent-file <file>] [--posture-file <file>] [--principals <file>]
+    [--event-log <file>]
 ```
 
 `--actor` is the invoking principal (id or `@handle`). `--agent` is the
@@ -57,6 +65,13 @@ set and neither is supplied, the invocation rejects as
 P2 consent context: with a wired registry, `--capability` must resolve
 to a `granted` record for `--agent`. Registry loading failure (wired but
 missing/invalid file) exits 2 (config error, fail-closed).
+
+P3 posture context: with a wired registry, `--route` must be in the
+agent's active route set (`posture-active`). No route ⇒
+`posture-route-missing`; agent with no route set ⇒ `posture-missing`;
+route outside the set ⇒ `posture-mismatch`. All reject. Registry loading
+failure (wired but missing/invalid file) exits 2 (config error,
+fail-closed).
 
 ## Decision + exit codes
 
@@ -89,8 +104,11 @@ to the event log:
 `tenant-jwt-invalid`, `tenant-broker-unreachable`, `tenant-triple-present`,
 `tenant-jwt-verified` (P1); `consent-capability-missing`,
 `consent-missing`, `consent-revoked`, `consent-granted`,
-`consent-registry-unavailable`, `consent-registry-unwired` (P2). `tenant`
-and `consent` fields are additive and backward-compatible with P0 consumers.
+`consent-registry-unavailable`, `consent-registry-unwired` (P2);
+`posture-route-missing`, `posture-missing`, `posture-mismatch`,
+`posture-active`, `posture-registry-unavailable`, `posture-registry-unwired`
+(P3). `tenant`, `consent`, and `posture` fields are additive and
+backward-compatible with P0 consumers.
 
 ## Principals registry
 
@@ -115,6 +133,19 @@ canonical config (DAT contract).
 
 Wired with `PREFLIGHT_CONSENT_FILE` (env) or `--consent-file` (CLI).
 Unwired ⇒ `consent: "skipped"` (P0/P1 behavior unchanged). Wired but
+missing/invalid file ⇒ exit 2 (config error, fail-closed).
+
+## Posture registry (P3)
+
+`config/preflight-posture.json` in the repo checkout:
+
+```json
+{"version": 1, "posture": {"<agent_id>": ["<route>", ...]}}
+```
+
+The active routing-matrix route set per agent (L-001 §6). Wired with
+`PREFLIGHT_POSTURE_FILE` (env) or `--posture-file` (CLI). Unwired ⇒
+`posture: "skipped"` (P0/P1/P2 behavior unchanged). Wired but
 missing/invalid file ⇒ exit 2 (config error, fail-closed).
 
 ## Subscription surface (P1+ consumers)
