@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Pre-flight gate (P0+P1) — per-invocation pre-LLM gate.
+"""Pre-flight gate (P0+P1+P2) — per-invocation pre-LLM gate.
 
 Part of epic `DarojaAI/linux-desktop-seed#1857` (owner:
 `linux_desktop_seed`). Work items: `DarojaAI/openclaw-gateway#119`
-(P0), `DarojaAI/openclaw-gateway#121` (P1).
+(P0), `DarojaAI/openclaw-gateway#121` (P1), `DarojaAI/openclaw-gateway#123` (P2).
 
 What this is
 ------------
@@ -15,7 +15,10 @@ lands, the runtime hook layer invokes this script; the script checks:
 - (P1) tenant-model: when a daroja-tenancy broker is wired
   (``TENANCY_BROKER_URL``), the invocation's tenant context
   (counterparty/client/project triple) is present and consistent with
-  the round-2 contract.
+  the round-2 contract;
+- (P2) capability-consent: when a consent registry is wired
+  (``PREFLIGHT_CONSENT_FILE``), the requested capability must resolve
+  to an explicit ``granted`` record for the agent (L-001 §3).
 
 Everything fails CLOSED (reject). Every decision emits a structured
 ``preflight.decision.v1`` telemetry event so downstream lanes can
@@ -29,19 +32,24 @@ Scope
   ``counterparty_id``/``client_id``/``project_id``). When the broker is
   NOT wired (env unset), the tenant check is skipped and recorded as
   ``tenant: "skipped"`` — environments without tenancy keep working.
+- P2: capability-consent (L-001 §3). When a consent registry is wired
+  (``PREFLIGHT_CONSENT_FILE`` set), a requested capability with no
+  explicit ``granted`` record for the agent REJECTS — silent capability
+  introductions are blocked pre-flight. Unwired ⇒ ``consent: "skipped"``
+  (P0/P1 behavior unchanged).
 
-NOT in this file yet (later phases of epic #1857): capability-consent
-(P2), routing-posture (P3). The decision surface is shaped so those
-phases add checks without changing the wire format.
+NOT in this file yet (later phases of epic #1857): routing-posture (P3).
+The decision surface is shaped so those phases add checks without
+changing the wire format.
 
 Wire surface v1 (see docs/contracts/preflight-v1.md)
 ----------------------------------------------------
 - Invocation: CLI args ``evaluate --actor <x> --agent <y>
   [--capability <z>] [--tenant-jwt <jwt>] [--audience <a>]
   [--counterparty-id .. --client-id .. --project-id ..]
-  [--principals <file>] [--event-log <file>]``.
+  [--consent-file <file>] [--principals <file>] [--event-log <file>]``.
 - Decision: JSON on stdout + exit code:
-    0  ALLOW   (actor known, agent present, tenant ok/skipped)
+    0  ALLOW   (all wired checks passed / skipped)
     1  REJECT  (any check failed — fail-closed)
     2  CONFIG/USAGE error (also fail-closed: hook treats !=0 as block)
 - Event: one JSON object per invocation:
@@ -88,10 +96,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Default principals registry relative to the repo checkout
-# (the script lives in scripts/, the registry in config/).
+# Default registries relative to the repo checkout (the script lives in
+# scripts/, the registries in config/).
 DEFAULT_PRINCIPALS = (
     Path(__file__).resolve().parent.parent / "config" / "preflight-principals.json"
+)
+DEFAULT_CONSENT = (
+    Path(__file__).resolve().parent.parent / "config" / "preflight-consent.json"
 )
 
 EVENT_NAME = "preflight.decision.v1"
@@ -202,6 +213,61 @@ def load_principals(path: str | os.PathLike | None) -> list[dict[str, Any]]:
     return data["principals"]
 
 
+def load_consent(path: str | os.PathLike | None) -> dict[str, Any]:
+    """Load and validate the consent registry.
+
+    Shape: ``{"version": 1, "consent": {"<agent_id>": {"<capability>": "granted"|"revoked"}}}``.
+
+    Raises ValueError on a missing/invalid registry (fail-closed:
+    the caller should treat that as exit 2, not as allow-everything).
+    """
+    registry_path = Path(path or os.environ.get("PREFLIGHT_CONSENT_FILE") or DEFAULT_CONSENT)
+    with open(registry_path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not isinstance(data.get("consent"), dict):
+        raise ValueError(f"invalid consent registry {registry_path}: expected {{'consent': {{...}}}}")
+    return data["consent"]
+
+
+def consent_check(
+    capability: str | None,
+    agent_id: str | None,
+    consent_registry: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """P2 capability-consent check (L-001 §3).
+
+    Active ONLY when a consent registry is wired (``PREFLIGHT_CONSENT_FILE``
+    set or ``--consent-file`` given; deploy wires it via env, DAT
+    contract). When unwired, the check is skipped and recorded as
+    ``status: "skipped"`` so environments without the consent layer keep
+    P0/P1 behavior unchanged.
+
+    When active, the requested capability must resolve to an explicit
+    ``granted`` record for the agent:
+      - no capability requested        => ``missing`` (reject)
+      - capability has no record       => ``missing`` (reject)
+      - capability record is ``revoked`` => ``revoked`` (reject)
+      - capability record is ``granted`` => ``ok`` (allow)
+
+    Returns ``{"status": ..., "reason": ...}``. ``consent_registry`` is
+    the loaded registry value (None when unwired); the caller decides
+    wiring from env/CLI, mirroring tenant_check's env gating.
+    """
+    if consent_registry is None:
+        return {"status": "skipped", "reason": "consent-registry-unwired"}
+    if not capability or not str(capability).strip():
+        return {"status": "missing", "reason": "consent-capability-missing"}
+    agent_grants = consent_registry.get(agent_id or "")
+    if not isinstance(agent_grants, dict):
+        return {"status": "missing", "reason": "consent-missing"}
+    record = agent_grants.get(capability)
+    if record == "granted":
+        return {"status": "ok", "reason": "consent-granted"}
+    if record == "revoked":
+        return {"status": "revoked", "reason": "consent-revoked"}
+    return {"status": "missing", "reason": "consent-missing"}
+
+
 def _principal_matches(actor: str, principals: list[dict[str, Any]]) -> bool:
     for p in principals:
         if not isinstance(p, dict):
@@ -246,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     # live only on the main parser once a subcommand is consumed).
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument("--principals", help="Path to principals registry (default: config/preflight-principals.json)")
+    shared.add_argument("--consent-file", help="Path to consent registry (default: config/preflight-consent.json; wiring = env PREFLIGHT_CONSENT_FILE or this flag)")
     shared.add_argument("--event-log", help="Append decision events to this file")
 
     parser = argparse.ArgumentParser(
@@ -259,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     ev = sub.add_parser("evaluate", parents=[shared], help="Evaluate one invocation (hook entry point)")
     ev.add_argument("--actor", help="Invoking principal (id or @handle); empty/missing => reject")
     ev.add_argument("--agent", dest="agent_id", help="Target agent id; empty/missing => reject")
-    ev.add_argument("--capability", help="Requested capability (informational in P0)")
+    ev.add_argument("--capability", help="Requested capability (enforced by the P2 consent check when wired)")
     # P1 tenant-model context.
     ev.add_argument("--tenant-jwt", help="Tenant JWT to verify against the daroja-tenancy broker")
     ev.add_argument("--audience", help="Expected audience for the tenant JWT")
@@ -280,8 +347,12 @@ def main(argv: list[str] | None = None) -> int:
             args.principals or os.environ.get("PREFLIGHT_PRINCIPALS_FILE") or DEFAULT_PRINCIPALS
         )
         broker = os.environ.get("TENANCY_BROKER_URL", "").strip()
+        consent_wired = bool(
+            args.consent_file or os.environ.get("PREFLIGHT_CONSENT_FILE", "").strip()
+        )
         print(f"preflight-gate: registry={registry_path} principals={len(principals)}")
         print(f"preflight-gate: tenant-broker={'wired' if broker else 'unwired (check skipped)'}")
+        print(f"preflight-gate: consent-registry={'wired' if consent_wired else 'unwired (check skipped)'}")
         return 0
 
     if args.command != "evaluate":
@@ -319,6 +390,27 @@ def main(argv: list[str] | None = None) -> int:
     if decision["decision"] == "allow" and tenant["status"] in ("invalid", "missing"):
         decision["decision"] = "reject"
         decision["reason"] = tenant["reason"]
+
+    # P2: capability-consent check (active only when registry wired).
+    consent_wired = bool(any([args.consent_file, os.environ.get("PREFLIGHT_CONSENT_FILE", "").strip()]))
+    consent_registry: dict[str, Any] | None = None
+    if consent_wired:
+        try:
+            consent_registry = load_consent(args.consent_file)
+        except (OSError, ValueError) as e:
+            print(f"preflight-gate: ERROR loading consent registry: {e}", file=sys.stderr)
+            consent = {"status": "invalid", "reason": "consent-registry-unavailable"}
+            decision["consent"] = consent["status"]
+            decision["decision"] = "reject"
+            decision["reason"] = consent["reason"]
+            _emit(decision, args.event_log)
+            print(json.dumps(decision))
+            return 2
+    consent = consent_check(args.capability, args.agent_id, consent_registry)
+    decision["consent"] = consent["status"]
+    if decision["decision"] == "allow" and consent["status"] in ("missing", "revoked", "invalid"):
+        decision["decision"] = "reject"
+        decision["reason"] = consent["reason"]
 
     _emit(decision, args.event_log)
     print(json.dumps(decision))
