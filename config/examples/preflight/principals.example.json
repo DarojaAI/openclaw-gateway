@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "_note": "EXAMPLE DATA - copy per environment and replace with real operator ids/handles before wiring. Not production data. See README.md in this directory.",
+  "principals": [
+    {"id": "op-example-0001", "handle": "@example-operator-0001"},
+    {"id": "op-example-0002", "handle": "@example-operator-0002"}
+  ]
+}

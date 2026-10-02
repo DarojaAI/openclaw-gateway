@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "_note": "EXAMPLE DATA - copy per environment and replace with the env's real active routing-matrix rows before wiring. Not production data. See README.md in this directory.",
+  "posture": {
+    "daroja-lawyer-agent": ["legal_redline", "document_review"],
+    "daroja-finance-agent": ["finance_close", "invoice_review"],
+    "linux_desktop_seed": ["infra_maintenance", "lane_ops"]
+  }
+}
