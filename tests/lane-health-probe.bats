@@ -135,6 +135,9 @@ LOG
   cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
 Jun 28 18:48:41 host openclaw[1]: [diagnostic] long-running session: sessionId=abc sessionKey=agent:tool-call:discord:channel:1 state=processing age=275s queueDepth=3 classification=long_running activeWorkKind=tool_call lastProgress=tool:process:started lastProgressAge=60s recovery=none
 LOG
+  # Fresh Discord receive so the ingress-freshness gate (Issue #135) passes;
+  # this test only exercises lane-skip logic.
+  printf '%s host openclaw[1]: discord message received from user:1162 channel:1493\n' "$(date -u '+%b %d %H:%M:%S')" >> "$TEST_HOME/.local/log/openclaw-gateway/journal.log"
   export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
 
   run bash scripts/lane-health-probe.sh
@@ -146,6 +149,7 @@ LOG
   cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
 Jun 28 18:48:41 host openclaw[1]: [diagnostic] long-running session: sessionId=abc sessionKey=agent:manual:discord:channel:1 state=processing age=275s queueDepth=3 classification=long_running activeWorkKind=model_call lastProgress=model_call:started lastProgressAge=60s recovery=manual
 LOG
+  printf '%s host openclaw[1]: discord message received from user:1162 channel:1493\n' "$(date -u '+%b %d %H:%M:%S')" >> "$TEST_HOME/.local/log/openclaw-gateway/journal.log"
   export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
 
   run bash scripts/lane-health-probe.sh
@@ -157,11 +161,50 @@ LOG
   cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
 Jun 28 18:48:41 host openclaw[1]: [diagnostic] long-running session: sessionId=abc sessionKey=agent:active:discord:channel:1 state=processing age=275s queueDepth=3 classification=long_running activeWorkKind=model_call lastProgress=model_call:started lastProgressAge=2s recovery=none
 LOG
+  printf '%s host openclaw[1]: discord message received from user:1162 channel:1493\n' "$(date -u '+%b %d %H:%M:%S')" >> "$TEST_HOME/.local/log/openclaw-gateway/journal.log"
   export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
 
   run bash scripts/lane-health-probe.sh
   [ "$status" -eq 0 ]
   [[ "$output" != *"Killed"* ]]
+}
+
+# ---- Ingress freshness tests (Issue #135) ---------------------------------
+
+@test "lane-health-probe: fails when gateway up but no recent Discord receive" {
+  # Non-empty gateway log (gateway is demonstrably up) but no Discord
+  # receive/drain marker -> ingress stale, exit 1 with the failure labelled.
+  cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
+Jun 28 18:48:41 host openclaw[1]: gateway healthcheck ok
+LOG
+  export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+
+  run bash scripts/lane-health-probe.sh
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Issue #135"* ]]
+  [[ "$output" == *"FAIL"* ]]
+}
+
+@test "lane-health-probe: passes when Discord receive is recent" {
+  cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
+LOG
+  printf '%s host openclaw[1]: discord message received from user:1162 channel:1493\n' "$(date -u '+%b %d %H:%M:%S')" >> "$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+  export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+
+  run bash scripts/lane-health-probe.sh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OK: last Discord receive"* ]]
+}
+
+@test "lane-health-probe: disabled when INGRESS_FRESHNESS_SECONDS=0" {
+  echo "Jun 28 18:48:41 host openclaw[1]: gateway healthcheck ok" \
+    > "$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+  export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+  export INGRESS_FRESHNESS_SECONDS=0
+
+  run bash scripts/lane-health-probe.sh
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Issue #135"* ]]
 }
 
 # ---- Installer tests -------------------------------------------------------
@@ -224,7 +267,31 @@ LOG
   cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
 Jun 28 18:48:41 host openclaw[1]: [diagnostic] long-running session: sessionId=abc sessionKey=agent:fresh:discord:channel:1 state=processing age=10s queueDepth=0 classification=long_running activeWorkKind=model_call lastProgress=model_call:started lastProgressAge=2s recovery=none
 LOG
+  printf '%s host openclaw[1]: discord message received from user:1162 channel:1493\n' "$(date -u '+%b %d %H:%M:%S')" >> "$TEST_HOME/.local/log/openclaw-gateway/journal.log"
   export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
   run bash scripts/post-deploy-verify-lane-health.sh
   [ "$status" -eq 0 ]
+}
+
+@test "post-deploy-verify-lane-health: exits 1 when gateway up but ingress stale" {
+  # Gateway wrote a (non-ingress) log entry in the window -> it is up, but
+  # no Discord receive -> the Issue #135 gate fails the deploy.
+  cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
+Jun 28 18:48:41 host openclaw[1]: gateway healthcheck ok
+LOG
+  export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+  run bash scripts/post-deploy-verify-lane-health.sh
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Issue #135"* ]]
+  [[ "$output" == *"FAIL"* ]]
+}
+
+@test "post-deploy-verify-lane-health: passes when Discord receive is recent" {
+  cat > "$TEST_HOME/.local/log/openclaw-gateway/journal.log" <<'LOG'
+LOG
+  printf '%s host openclaw[1]: discord message received from user:1162 channel:1493\n' "$(date -u '+%b %d %H:%M:%S')" >> "$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+  export FIXTURE_JOURNAL="$TEST_HOME/.local/log/openclaw-gateway/journal.log"
+  run bash scripts/post-deploy-verify-lane-health.sh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OK: last Discord receive"* ]]
 }

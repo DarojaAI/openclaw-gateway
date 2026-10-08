@@ -20,13 +20,17 @@
 #   3. Kills the lane via `openclaw lane kill <sessionKey>` (best-effort).
 #   4. Discord-alerts the operator channel ONCE per wedged lane per probe
 #      cycle, with debouncing via the state file.
+#   5. Ingress freshness (Issue #135): fails when the gateway is up but no
+#      successful Discord receive/drain happened within
+#      INGRESS_FRESHNESS_SECONDS (default 900 = 15 min). Catches the case
+#      where /healthz 200s for hours while Discord ingress is dead.
 #
 # Designed to run from a user systemd timer (LANE_HEALTH_PROBE.timer,
 # installed by scripts/install/install-lane-health-probe.sh) every 30s.
 #
 # Exit codes:
-#   0 = no wedged lanes (healthy)
-#   1 = wedged lane(s) detected and killed (recovered)
+#   0 = no wedged lanes AND ingress fresh (healthy)
+#   1 = wedged lane(s) killed and/or ingress stale (action needed)
 #   2 = probe itself failed (cannot read journal, etc.)
 #
 # Sandbox-safe: all paths honor $HOME and $XDG_RUNTIME_DIR.
@@ -41,6 +45,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LANE_WALL_BUDGET_SECONDS="${LANE_WALL_BUDGET_SECONDS:-90}"
 LANE_GRACE_SECONDS="${LANE_GRACE_SECONDS:-30}"
 PROBE_INTERVAL_SECONDS="${PROBE_INTERVAL_SECONDS:-30}"
+
+# Ingress freshness (Issue #135): fail when the gateway is demonstrably up
+# (recently wrote log entries) but no successful Discord receive/drain has
+# happened within INGRESS_FRESHNESS_SECONDS. /healthz can return 200 while
+# the Discord ingress is dead for hours, so we watch the *freshness* of
+# incoming traffic, not just process liveness. Set to 0 to disable.
+# INGRESS_FRESHNESS_MARKER overrides the default line-matching regex
+# (see lib-last-ingress.py); empty = library default.
+INGRESS_FRESHNESS_SECONDS="${INGRESS_FRESHNESS_SECONDS:-900}"
+INGRESS_FRESHNESS_MARKER="${INGRESS_FRESHNESS_MARKER:-}"
 
 # State file: persists debouncing across probe runs.
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/openclaw-lane-health"
@@ -162,21 +176,62 @@ kill_lane() {
 main() {
     log "Probe start (budget=${LANE_WALL_BUDGET_SECONDS}s grace=${LANE_GRACE_SECONDS}s)"
 
-    local logs wedged_json count_killed=0 count_alerted=0
+    local logs wedged_json count_killed=0 count_alerted=0 rc=0
     logs="$(read_recent_logs || true)"
     if [[ -z "$logs" ]]; then
         log "No recent gateway logs available; nothing to probe"
         exit 0
     fi
 
-    wedged_json="$(echo "$logs" | extract_wedged_lanes || true)"
-    if [[ -z "$wedged_json" ]]; then
-        log "No wedged lanes detected"
-        exit 0
+    # ---- Ingress freshness (Issue #135) ---------------------------------
+    # `logs` being non-empty proves the gateway is up (it just wrote
+    # journal entries). A gateway that /healthz-200s but stopped draining
+    # Discord is exactly the failure this dimension catches.
+    if [[ "$INGRESS_FRESHNESS_SECONDS" -gt 0 ]]; then
+        local ing_json ing_found ing_age
+        ing_json="$(echo "$logs" | \
+            INGRESS_FRESHNESS_MARKER="$INGRESS_FRESHNESS_MARKER" \
+            python3 "$REPO_ROOT/scripts/lib-last-ingress.py" || true)"
+        ing_found="$(printf '%s' "$ing_json" | python3 -c 'import json,sys
+try: print(1 if json.load(sys.stdin).get("found") else 0)
+except Exception: print(0)' 2>/dev/null || echo 0)"
+        ing_age="$(printf '%s' "$ing_json" | python3 -c 'import json,sys
+try: print(int(json.load(sys.stdin).get("ageSeconds", -1)))
+except Exception: print(-1)' 2>/dev/null || echo -1)"
+
+        local ingest_ok="false"
+        if [[ "$ing_found" == "1" ]] && [[ "$ing_age" -ge 0 ]] \
+                && [[ "$ing_age" -lt $INGRESS_FRESHNESS_SECONDS ]]; then
+            ingest_ok="true"
+        fi
+
+        if [[ "$ingest_ok" == "true" ]]; then
+            log "OK: last Discord receive ${ing_age}s ago (window=${INGRESS_FRESHNESS_SECONDS}s)"
+        else
+            local hour_bucket dedup_key
+            hour_bucket="$(date -u +%Y-%m-%dT%H)"
+            dedup_key="ingress#${hour_bucket}"
+            if [[ "$ing_found" == "0" ]]; then
+                log "FAIL: gateway up but no Discord receive/drain in last ${INGRESS_FRESHNESS_SECONDS}s (Issue #135)"
+            else
+                log "FAIL: last Discord receive ${ing_age}s ago (> window ${INGRESS_FRESHNESS_SECONDS}s) (Issue #135)"
+            fi
+            # Debounce the ingress alert to once per hour, matching the
+            # lane-alert debouncing below.
+            if ! grep -qF "\"$dedup_key\"" "$STATE_FILE" 2>/dev/null; then
+                alert "Discord ingress stale" \
+                    "gateway up but last Discord receive was ${ing_age}s ago (window=${INGRESS_FRESHNESS_SECONDS}s)"
+                echo "\"$dedup_key\"" >> "$STATE_FILE"
+            fi
+            rc=1
+        fi
     fi
 
-    while IFS= read -r entry; do
-        [[ -z "$entry" ]] && continue
+    # ---- Wedged-lane detection -------------------------------------------
+    wedged_json="$(echo "$logs" | extract_wedged_lanes || true)"
+    if [[ -n "$wedged_json" ]]; then
+        while IFS= read -r entry; do
+            [[ -z "$entry" ]] && continue
         local sk age kind last_prog last_age recovery
         sk="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["sessionKey"])')"
         age="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["ageSeconds"])')"
@@ -228,15 +283,16 @@ main() {
         count_alerted=$((count_alerted + 1))
         echo "\"$dedup_key\"" >> "$STATE_FILE"
     done <<< "$wedged_json"
+    fi
 
     # Trim state file (keep last 24h).
     find "$STATE_DIR" -type f -name "*.json" -mtime +1 -delete 2>/dev/null || true
 
     log "Probe end: killed=$count_killed alerted=$count_alerted"
     if [[ "$count_killed" -gt 0 ]]; then
-        exit 1
+        rc=1
     fi
-    exit 0
+    exit "$rc"
 }
 
 main "$@"

@@ -28,6 +28,11 @@
 #   FAIL_ON_HEALTHZ_DOWN  if "1", also require /healthz to be 200
 #                        (default: 0 — the L3 deploy already checks healthz)
 #   LANE_HEALTH_BUDGET_SECONDS  wall-clock threshold (default: 90)
+#   INGRESS_FRESHNESS_SECONDS   fail if gateway up but no Discord receive
+#                               within this many seconds (default: 900;
+#                               0 disables). Issue #135.
+#   INGRESS_FRESHNESS_MARKER    regex for a Discord receive/drain log line
+#                               (default: see lib-last-ingress.py)
 
 set -euo pipefail
 
@@ -38,6 +43,14 @@ GATEWAY_UNIT="${GATEWAY_UNIT:-openclaw-gateway.service}"
 WINDOW_SECONDS="${WINDOW_SECONDS:-60}"
 FAIL_ON_HEALTHZ_DOWN="${FAIL_ON_HEALTHZ_DOWN:-0}"
 LANE_HEALTH_BUDGET_SECONDS="${LANE_HEALTH_BUDGET_SECONDS:-90}"
+
+# Ingress freshness (Issue #135): fail when the gateway shows recent log
+# activity (it is up) but no successful Discord receive/drain happened
+# within INGRESS_FRESHNESS_SECONDS (default 900 = 15 min). 0 disables this
+# gate. INGRESS_FRESHNESS_MARKER overrides the line-matching regex (see
+# lib-last-ingress.py); empty = library default.
+INGRESS_FRESHNESS_SECONDS="${INGRESS_FRESHNESS_SECONDS:-900}"
+INGRESS_FRESHNESS_MARKER="${INGRESS_FRESHNESS_MARKER:-}"
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [post-deploy-verify-lane-health] $*" >&2; }
 
@@ -92,6 +105,42 @@ if [[ -n "$wedged" ]]; then
     echo "$wedged" | sed 's/^/  /' >&2
     log "Remediation: restart the gateway cleanly, then re-run deploy."
     exit 1
+fi
+
+# Ingress freshness (Issue #135): a gateway can answer /healthz 200 while
+# its Discord ingress is silently dead for hours. Failing only when the
+# gateway provably produced logs in the ingress window avoids false-failing
+# a *genuinely idle* fresh deploy (silent journal = treat as idle/down).
+if [[ "$INGRESS_FRESHNESS_SECONDS" -gt 0 ]]; then
+    ing_logs="$(journalctl --user -u "$GATEWAY_UNIT" \
+        --since "${INGRESS_FRESHNESS_SECONDS} seconds ago" \
+        --no-pager -q 2>/dev/null || true)"
+    if [[ -n "$ing_logs" ]]; then
+        ing_json="$(echo "$ing_logs" | \
+            INGRESS_FRESHNESS_MARKER="$INGRESS_FRESHNESS_MARKER" \
+            python3 "$REPO_ROOT/scripts/lib-last-ingress.py" || true)"
+        ing_found="$(printf '%s' "$ing_json" | python3 -c 'import json,sys
+try: print(1 if json.load(sys.stdin).get("found") else 0)
+except Exception: print(0)' 2>/dev/null || echo 0)"
+        ing_age="$(printf '%s' "$ing_json" | python3 -c 'import json,sys
+try: print(int(json.load(sys.stdin).get("ageSeconds", -1)))
+except Exception: print(-1)' 2>/dev/null || echo -1)"
+
+        if [[ "$ing_found" == "1" ]] && [[ "$ing_age" -ge 0 ]] \
+                && [[ "$ing_age" -lt $INGRESS_FRESHNESS_SECONDS ]]; then
+            log "OK: last Discord receive ${ing_age}s ago (window=${INGRESS_FRESHNESS_SECONDS}s)"
+        else
+            if [[ "$ing_found" == "0" ]]; then
+                log "FAIL: gateway log activity but no Discord receive/drain in last ${INGRESS_FRESHNESS_SECONDS}s (Issue #135)"
+            else
+                log "FAIL: last Discord receive ${ing_age}s ago (> window ${INGRESS_FRESHNESS_SECONDS}s) (Issue #135)"
+            fi
+            log "Remediation: verify the Discord gateway connection/token, then re-run deploy."
+            exit 1
+        fi
+    else
+        log "WARN: no gateway log activity in last ${INGRESS_FRESHNESS_SECONDS}s; skipping ingress freshness check"
+    fi
 fi
 
 log "OK: no wedged lanes in last ${WINDOW_SECONDS}s"
