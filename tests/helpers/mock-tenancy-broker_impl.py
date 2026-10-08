@@ -3,12 +3,12 @@ import sys
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-# CodeQL py/path-injection hardening: every file-access path is built
-# inline from this helper's own directory (__file__) plus a literal file
-# name, with no variable indirection, so no untrusted value can reach an
-# open() sink. Fixture lookup names come from the HTTP request path and are
-# reduced to their basename, then validated against a whitelist regex before
-# any path is built.
+# CodeQL py/path-injection hardening: every path passed to open()/exists()
+# is built from this helper's own directory (__file__) plus a real filename
+# returned by os.listdir(); no request data ever flows into a path sink.
+# Fixture names derived from the HTTP request path (basename, validated
+# against a whitelist regex) are used only as comparison keys against the
+# directory listing.
 
 port = int(sys.argv[1])
 class Handler(BaseHTTPRequestHandler):
@@ -37,14 +37,24 @@ class Handler(BaseHTTPRequestHandler):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", norm):
             self.send_error(404)
             return
+        # CodeQL py/path-injection: no open()/exists() path is ever built
+        # from request data. The request-derived expected name is used
+        # only as a comparison key against entries from os.listdir();
+        # every open() receives a real filename from disk (listdir), so
+        # no tainted value reaches a path sink.
+        match = f"{method}_{norm}"
         status = 200
         body = b'{"triple": null, "valid": false, "exp": null}'
-        if os.path.exists(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.status")):
-            with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.status")) as f:
-                status = int(f.read().strip() or 200)
-        if os.path.exists(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.json")):
-            with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.json"), "rb") as f:
-                body = f.read()
+        for response in os.listdir(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures")):
+            base, ext = os.path.splitext(response)
+            if base != match:
+                continue
+            if ext == ".status":
+                with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", response)) as f:
+                    status = int(f.read().strip() or 200)
+            elif ext == ".json":
+                with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", response), "rb") as f:
+                    body = f.read()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
