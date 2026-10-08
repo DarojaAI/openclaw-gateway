@@ -44,6 +44,13 @@ repos:
     hooks:
       - id: gitleaks
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff
+        name: ruff (E9,F632,F821)
+        args: [--no-cache, --isolated, --select, E9, --select, F632, --select, F821]
+        types: [python]
   - repo: local
     hooks:
       - id: bats-agent-config
@@ -57,4 +64,4 @@ repos:
         entry: scripts/ci/run-agent-config-bats.sh
         language: system
         pass_filenames: false
-        files: ^(tests/agent-config-.*\.bats|schemas/agent-config\.schema\.json|config/openclaw-agent-config\.example\.yaml|config/openclaw-version)$
+        files: ^(tests/agent-config-.*\.bats|schemas/agent-config\.schema\.json|config/openclaw-agent-config\.example\.yaml|config/openclaw-version)$  # yamllint disable-line
