@@ -10,7 +10,7 @@
 # Fixture layout
 # --------------
 # The test creates a temporary dir with one file per response,
-# named "<METHOD>_<PATH_WITH_SLASHES_AS_UNDERSCORES>.json" and the
+# named "<METHOD>_<BASENAME_OF_PATH>.json" and the
 # same prefix with a ".status" suffix. The body file contains the
 # raw bytes to return; the status file contains a single integer
 # HTTP status. Every request is recorded into

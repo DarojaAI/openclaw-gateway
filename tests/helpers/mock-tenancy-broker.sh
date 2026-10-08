@@ -9,9 +9,9 @@
 # Fixture layout
 # --------------
 # The test points TENANCY_BROKER_URL at the mock and creates
-# "$FIXTURES_DIR/POST_auth_verify.json" — the raw bytes to return for
+# "$FIXTURES_DIR/POST_verify.json" — the raw bytes to return for
 # POST /auth/verify — plus an optional
-# "$FIXTURES_DIR/POST_auth_verify.status" (single integer HTTP status).
+# "$FIXTURES_DIR/POST_verify.status" (single integer HTTP status).
 # The round-2 contract returns {"triple": {...}, "valid": bool, "exp": n}.
 # Every request is recorded into "$FIXTURES_DIR/requests.log"
 # (one line per request: METHOD PATH).

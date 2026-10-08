@@ -30,8 +30,8 @@
 # - Each test gets a fresh fixtures dir under BATS_TEST_TMPDIR and
 #   a fresh mock server on a unique port. teardown() kills the
 #   server so the next test starts clean.
-# - Mock fixtures are named <METHOD>_<PATH_UNDERSCORED>.json and
-#   <METHOD>_<PATH_UNDERSCORED>.status. The mock server records
+# - Mock fixtures are named <METHOD>_<BASENAME_OF_PATH>.json and
+#   <METHOD>_<BASENAME_OF_PATH>.status. The mock server records
 #   every request into requests.log and every DELETE into
 #   delete_calls.log so tests can assert on call shape.
 # - We never put a real provisioning key in the environment. The
@@ -105,10 +105,10 @@ teardown() {
 # to check for an existing label, then POST /keys to create).
 
 stage_list_response_empty() {
-	cat >"$FIXTURES/GET__api_v1_keys.json" <<'JSON'
+	cat >"$FIXTURES/GET_keys.json" <<'JSON'
 {"data":[]}
 JSON
-	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	echo "200" >"$FIXTURES/GET_keys.status"
 }
 
 stage_list_response_with() {
@@ -118,10 +118,10 @@ stage_list_response_with() {
 	local limit="$3"
 	local reset="$4"
 	local usage_monthly="$5"
-	cat >"$FIXTURES/GET__api_v1_keys.json" <<JSON
+	cat >"$FIXTURES/GET_keys.json" <<JSON
 {"data":[{"hash":"$hash","label":"$label","limit":$limit,"limit_reset":"$reset","usage":0.0,"usage_monthly":$usage_monthly}]}
 JSON
-	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	echo "200" >"$FIXTURES/GET_keys.status"
 }
 
 stage_create_response() {
@@ -130,18 +130,18 @@ stage_create_response() {
 	local label="$2"
 	local limit="$3"
 	local reset="$4"
-	cat >"$FIXTURES/POST__api_v1_keys.json" <<JSON
+	cat >"$FIXTURES/POST_keys.json" <<JSON
 {"data":{"key":"$key","label":"$label","limit":$limit,"limit_reset":"$reset","usage":0.0,"usage_monthly":0.0,"include_byok_in_limit":true,"created_at":"2026-06-17T00:00:00Z"}}
 JSON
-	echo "200" >"$FIXTURES/POST__api_v1_keys.status"
+	echo "200" >"$FIXTURES/POST_keys.status"
 }
 
 stage_create_error() {
 	# stage_create_error <status> "<body>"
 	local status="$1"
 	local body="$2"
-	printf '%s' "$body" >"$FIXTURES/POST__api_v1_keys.json"
-	echo "$status" >"$FIXTURES/POST__api_v1_keys.status"
+	printf '%s' "$body" >"$FIXTURES/POST_keys.json"
+	echo "$status" >"$FIXTURES/POST_keys.status"
 }
 
 stage_key_info() {
@@ -149,10 +149,10 @@ stage_key_info() {
 	local limit="$1"
 	local limit_remaining="$2"
 	local usage_monthly="$3"
-	cat >"$FIXTURES/GET__api_v1_key.json" <<JSON
+	cat >"$FIXTURES/GET_key.json" <<JSON
 {"data":{"label":"bond_nexus","limit":$limit,"limit_remaining":$limit_remaining,"usage_monthly":$usage_monthly,"include_byok_in_limit":true}}
 JSON
-	echo "200" >"$FIXTURES/GET__api_v1_key.status"
+	echo "200" >"$FIXTURES/GET_key.status"
 }
 
 assert_requests_log_contains() {
@@ -231,7 +231,7 @@ assert_requests_log_contains() {
 	stage_list_response_with "hash-1" "bond_nexus" 10.0 monthly 2.5
 	stage_list_response_with "hash-2" "dev_nexus" 25.0 weekly 0.0
 	# Re-write the fixture to include both keys in the data array.
-	cat >"$FIXTURES/GET__api_v1_keys.json" <<'JSON'
+	cat >"$FIXTURES/GET_keys.json" <<'JSON'
 {"data":[
   {"hash":"hash-1","label":"bond_nexus","limit":10.0,"limit_reset":"monthly","usage":12.0,"usage_monthly":2.5},
   {"hash":"hash-2","label":"dev_nexus","limit":25.0,"limit_reset":"weekly","usage":0.0,"usage_monthly":0.0}
@@ -254,13 +254,13 @@ JSON
 	# must use name so per-agent keys surface under their agent id
 	# (regression: linux-desktop-seed health check saw 0 of 24 agents
 	# matched and every key reported as an orphan, 2026-08-31).
-	cat >"$FIXTURES/GET__api_v1_keys.json" <<'JSON'
+	cat >"$FIXTURES/GET_keys.json" <<'JSON'
 {"data":[
   {"hash":"hash-1","label":"sk-or-v1-0e6...1c96","name":"bond_nexus","limit":10.0,"limit_reset":"monthly","usage":12.0,"usage_monthly":2.5},
   {"hash":"hash-2","label":"sk-or-v1-9f2...a72","name":"dev_nexus","limit":25.0,"limit_reset":"weekly","usage":0.0,"usage_monthly":0.0}
 ]}
 JSON
-	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	echo "200" >"$FIXTURES/GET_keys.status"
 	run python3 "$SCRIPT" list
 	[ "$status" -eq 0 ]
 	# Label column surfaces the NAME, not the masked key string.
@@ -279,14 +279,14 @@ JSON
 	# routing so a single GET /api/v1/keys fixture is served on every
 	# paginated call — the test asserts on the union of returned keys.
 	# Stage three pages: 3 keys, then 3 keys, then 2 keys (tail).
-	cat >"$FIXTURES/GET__api_v1_keys.json" <<'JSON'
+	cat >"$FIXTURES/GET_keys.json" <<'JSON'
 {"data":[
   {"hash":"hash-1","label":"bond_nexus","name":"bond_nexus","limit":10.0,"limit_reset":"monthly","usage":0.0,"usage_monthly":0.0},
   {"hash":"hash-2","label":"dev_nexus","name":"dev_nexus","limit":10.0,"limit_reset":"monthly","usage":0.0,"usage_monthly":0.0},
   {"hash":"hash-3","label":"rag_research_tool","name":"rag_research_tool","limit":10.0,"limit_reset":"monthly","usage":0.0,"usage_monthly":0.0}
 ]}
 JSON
-	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	echo "200" >"$FIXTURES/GET_keys.status"
 	# Run with a tiny page size so the test exercises the loop
 	# without requiring 100+ fixtures. We override the constant
 	# through a wrapper: list_keys uses an internal page_size; the
@@ -323,7 +323,7 @@ JSON
 	# "len(page) == page_size" condition and keep paginating. The
 	# loop's bounded max_pages guards against infinite growth — we
 	# rely on that to make the test finite.
-	python3 - <<'PY' >"$FIXTURES/GET__api_v1_keys.json"
+	python3 - <<'PY' >"$FIXTURES/GET_keys.json"
 import json
 keys = [
     {"hash": f"hash-{i:03d}", "label": f"agent-{i}", "name": f"agent-{i}",
@@ -332,7 +332,7 @@ keys = [
 ]
 print(json.dumps({"data": keys}))
 PY
-	echo "200" >"$FIXTURES/GET__api_v1_keys.status"
+	echo "200" >"$FIXTURES/GET_keys.status"
 	# Run the script. With a 100-cap that always returns 100, the
 	# provisioner keeps requesting until max_pages. This test takes
 	# ~1.5s locally (100 GETs); acceptably slow for a BATS case.
@@ -380,7 +380,7 @@ PY
 
 @test "sync: skips agents that already have a key (no duplicate create)" {
 	# bond_nexus already exists; dev_nexus is missing.
-	cat >"$FIXTURES/GET__api_v1_keys.json" <<'JSON'
+	cat >"$FIXTURES/GET_keys.json" <<'JSON'
 {"data":[{"hash":"hash-existing","label":"bond_nexus","limit":10.0,"limit_reset":"monthly","usage":1.0,"usage_monthly":0.5}]}
 JSON
 	# The create fixture returns a fixed key string. If the script
@@ -505,10 +505,10 @@ stage_create_response_masked() {
 	local limit="$2"
 	local reset="$3"
 	local hash="$4"
-	cat >"$FIXTURES/POST__api_v1_keys.json" <<JSON
+	cat >"$FIXTURES/POST_keys.json" <<JSON
 {"data":{"hash":"$hash","label":"$label","limit":$limit,"limit_reset":"$reset","usage":0.0,"usage_monthly":0.0,"include_byok_in_limit":true,"created_at":"2026-08-15T00:00:00Z","key":"sk-or-…XXXX"}}
 JSON
-	echo "200" >"$FIXTURES/POST__api_v1_keys.status"
+	echo "200" >"$FIXTURES/POST_keys.status"
 }
 
 stage_create_response_no_key_field() {
@@ -518,10 +518,10 @@ stage_create_response_no_key_field() {
 	local limit="$2"
 	local reset="$3"
 	local hash="$4"
-	cat >"$FIXTURES/POST__api_v1_keys.json" <<JSON
+	cat >"$FIXTURES/POST_keys.json" <<JSON
 {"data":{"hash":"$hash","label":"$label","limit":$limit,"limit_reset":"$reset","usage":0.0,"usage_monthly":0.0,"include_byok_in_limit":true,"created_at":"2026-08-15T00:00:00Z"}}
 JSON
-	echo "200" >"$FIXTURES/POST__api_v1_keys.status"
+	echo "200" >"$FIXTURES/POST_keys.status"
 }
 
 @test "create_key recovers from masked data.key via list_keys reconciliation by name" {
@@ -576,12 +576,12 @@ JSON
 	# is `if True and False`, which falls through. Then `matched=None`
 	# triggers the second guard. That is what we want — second guard
 	# catches the unhashed case. Stage POST with no hash to exercise.
-	rm -f "$FIXTURES/GET__api_v1_keys.json" "$FIXTURES/GET__api_v1_keys.status"
+	rm -f "$FIXTURES/GET_keys.json" "$FIXTURES/GET_keys.status"
 	# POST returns no data.key AND no data.hash
-	cat >"$FIXTURES/POST__api_v1_keys.json" <<'JSON'
+	cat >"$FIXTURES/POST_keys.json" <<'JSON'
 {"data":{"label":"orphan","limit":10,"limit_reset":"monthly","include_byok_in_limit":true}}
 JSON
-	echo "200" >"$FIXTURES/POST__api_v1_keys.status"
+	echo "200" >"$FIXTURES/POST_keys.status"
 
 	run python3 "$SCRIPT" provision --agent orphan --limit 10 --reset monthly
 	[ "$status" -ne 0 ]
