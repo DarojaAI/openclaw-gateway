@@ -39,9 +39,9 @@ JSON
     MOCK="$REPO_ROOT/tests/helpers/mock-tenancy-broker.sh"
     _base=$((18766 + (RANDOM % 200)))
     export MOCK_PORT="$_base"
-    FIXTURES="$BATS_TEST_TMPDIR/tenancy-fixtures"
-    export MOCK_FIXTURES_DIR="$FIXTURES"
-    mkdir -p "$FIXTURES"
+    FIXTURES="$REPO_ROOT/tests/helpers/fixtures"
+
+    rm -rf "$FIXTURES"; mkdir -p "$FIXTURES"
     "$MOCK" "$MOCK_PORT" >"$BATS_TEST_TMPDIR/mock.stdout" 2>"$BATS_TEST_TMPDIR/mock.stderr" &
     MOCK_PID=$!
     # Wait for the mock to accept connections.

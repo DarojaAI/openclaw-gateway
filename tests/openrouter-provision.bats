@@ -46,8 +46,8 @@ setup() {
 
 	BATS_TEST_TMPDIR="${BATS_TEST_TMPDIR:-$(mktemp -d)}"
 	export BATS_TEST_TMPDIR
-	FIXTURES="$BATS_TEST_TMPDIR/fixtures"
-	mkdir -p "$FIXTURES"
+	FIXTURES="$REPO_ROOT/tests/helpers/fixtures"
+	rm -rf "$FIXTURES"; mkdir -p "$FIXTURES"
 
 	# Pick a free-ish port. bats 1.2 doesn't have a port helper, so
 	# we ask the kernel for one and use it. If it's busy the mock
@@ -57,7 +57,7 @@ setup() {
 	# avoid collisions when tests run in parallel.
 	_base=$(( ($$ * 17) % 10000 + 18000 ))
 	export MOCK_PORT="$_base"
-	export MOCK_FIXTURES_DIR="$FIXTURES"
+
 	export OPENROUTER_PROVISIONING_KEY="sk-or-v1-test-fake-master-key-do-not-use"
 
 	# Stage a default list-keys response so list_keys() always

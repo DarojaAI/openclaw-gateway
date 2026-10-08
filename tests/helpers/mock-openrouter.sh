@@ -39,7 +39,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PORT="${MOCK_PORT:-${1:-18765}}"
-FIXTURES_DIR="${MOCK_FIXTURES_DIR:-/tmp/openrouter-mock-$PORT}"
+FIXTURES_DIR="$SCRIPT_DIR/fixtures"
 REQUESTS_LOG="$FIXTURES_DIR/requests.log"
 DELETE_LOG="$FIXTURES_DIR/delete_calls.log"
 
@@ -59,4 +59,4 @@ fi
 # the python server fails to bind.
 echo "$PORT"
 
-exec python3 "$SCRIPT_DIR/mock-openrouter_impl.py" "$PORT" "$FIXTURES_DIR" "$REQUESTS_LOG" "$DELETE_LOG"
+exec python3 "$SCRIPT_DIR/mock-openrouter_impl.py" "$PORT"

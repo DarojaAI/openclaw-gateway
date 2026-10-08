@@ -1,43 +1,19 @@
 import os
 import sys
-import tempfile
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-# Security hardening for CodeQL py/path-injection: even though this mock is
-# localhost-only test infrastructure, cheap guards keep untrusted input out
-# of the file-access paths.  Both kinds of file path are constrained:
-#   argv-supplied paths (the fixtures dir and both request logs) must resolve
-#   inside this helper's own directory orthe system-wide temp dir; anything else
-#   aborts startup.  Fixture lookup names derived fromtheHTTP request path are
-#   reduced to their basename, so request paths cannot alias arbitrary files.. No
-#   absolute or parent segments can drive the fixture lookup..
 
-_here = os.path.realpath(__file__)
-_HERE = os.path.dirname(_here)
-_tmp_dir = tempfile.gettempdir()
-_TMP_ROOT = os.path.realpath(_tmp_dir)
-_ALLOWED_ROOTS = (_HERE, _TMP_ROOT)
-
-
-def _safe_argv_path(name, value):
-    real = os.path.realpath(value)
-    ok = False
-    for root in _ALLOWED_ROOTS:
-
-        if real == root:
-            ok = True
-        if real.startswith(root + os.sep):
-            ok = True
-    if not ok:
-        raise SystemExit(f"mock-openrouter: refusing {name} outside allowed roots: {value}")
-    return real
-
+# CodeQL py/path-injection hardening: all file-access paths are module-level
+# constants derived from this helper's own directory, not from argv, so no
+# untrusted values reach an open() sink ( no taint flow.  Fixture lookup
+# names come fromtheHTTP request path and are reduced to their basename, then
+# validated against a whitelist regex before any path is built..
+_HERE = os.path.dirname(os.path.realpath(__file__))
+FIXTURES_DIR = os.path.join(_HERE, "fixtures")
+REQUESTS_LOG = os.path.join(_HERE, "requests.log")
+DELETE_LOG = os.path.join(_HERE, "delete_calls.log")
 
 port = int(sys.argv[1])
-fixtures = _safe_argv_path("fixtures dir", sys.argv[2])
-requests_log = _safe_argv_path("requests log", sys.argv[3])
-delete_log = _safe_argv_path("delete log", sys.argv[4])
-
-
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):  # silence default stderr access log
         pass
@@ -58,10 +34,10 @@ class Handler(BaseHTTPRequestHandler):
         req_name = req_name.strip("/")
         if not req_name:
             req_name = "index"
-        with open(requests_log, "a") as f:
+        with open(REQUESTS_LOG, "a") as f:
             f.write(f"{method} {raw_path}\n")
         if method == "DELETE":
-            with open(delete_log, "a") as f:
+            with open(DELETE_LOG, "a") as f:
                 f.write(f"{raw_path}\n")
             body = b'{"data":null}'
             self.send_response(200)
@@ -71,8 +47,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         norm = req_name.replace("/", "_")
-        body_path = os.path.join(fixtures, f"{method}_{norm}.json")
-        status_path = os.path.join(fixtures, f"{method}_{norm}.status")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", norm):
+            self.send_error(404)
+            return
+        body_path = os.path.join(FIXTURES_DIR, f"{method}_{norm}.json")
+        status_path = os.path.join(FIXTURES_DIR, f"{method}_{norm}.status")
         status = 200
         body = b"{}"
         if os.path.exists(status_path):

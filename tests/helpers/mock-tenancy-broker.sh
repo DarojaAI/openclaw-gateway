@@ -27,7 +27,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PORT="${MOCK_PORT:-${1:-18766}}"
-FIXTURES_DIR="${MOCK_FIXTURES_DIR:-/tmp/tenancy-mock-$PORT}"
+FIXTURES_DIR="$SCRIPT_DIR/fixtures"
 REQUESTS_LOG="$FIXTURES_DIR/requests.log"
 
 mkdir -p "$FIXTURES_DIR"
@@ -43,4 +43,4 @@ fi
 # the python server fails to bind.
 echo "$PORT"
 
-exec python3 "$SCRIPT_DIR/mock-tenancy-broker_impl.py" "$PORT" "$FIXTURES_DIR" "$REQUESTS_LOG"
+exec python3 "$SCRIPT_DIR/mock-tenancy-broker_impl.py" "$PORT"
