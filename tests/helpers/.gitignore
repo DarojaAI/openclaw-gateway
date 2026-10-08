@@ -1,0 +1,6 @@
+# Runtime artifacts created by the mock servers during BATS runs
+# (fixtures staged per-test, request/delete logs written next to the
+# impl). Truncated/recreated on every mock startup, so never committed.
+fixtures/
+requests.log
+delete_calls.log

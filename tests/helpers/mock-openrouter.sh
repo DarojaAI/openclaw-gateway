@@ -10,12 +10,13 @@
 # Fixture layout
 # --------------
 # The test creates a temporary dir with one file per response,
-# named "<METHOD>_<PATH_WITH_SLASHES_AS_UNDERSCORES>.json" and the
+# named "<METHOD>_<BASENAME_OF_PATH>.json" and the
 # same prefix with a ".status" suffix. The body file contains the
 # raw bytes to return; the status file contains a single integer
 # HTTP status. Every request is recorded into
-# "$FIXTURES_DIR/requests.log" (one line per request: METHOD PATH).
-# DELETE calls additionally go into "$FIXTURES_DIR/delete_calls.log"
+# "$SCRIPT_DIR/requests.log" (one line per request: METHOD PATH), the
+# same location the python impl writes (its __file__ dir == SCRIPT_DIR).
+# DELETE calls additionally go into "$SCRIPT_DIR/delete_calls.log"
 # (just the path), since DELETE responses are usually empty and we
 # still want to assert the right hash was passed.
 #
@@ -36,10 +37,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 PORT="${MOCK_PORT:-${1:-18765}}"
-FIXTURES_DIR="${MOCK_FIXTURES_DIR:-/tmp/openrouter-mock-$PORT}"
-REQUESTS_LOG="$FIXTURES_DIR/requests.log"
-DELETE_LOG="$FIXTURES_DIR/delete_calls.log"
+FIXTURES_DIR="$SCRIPT_DIR/fixtures"
+REQUESTS_LOG="$SCRIPT_DIR/requests.log"
+DELETE_LOG="$SCRIPT_DIR/delete_calls.log"
 
 mkdir -p "$FIXTURES_DIR"
 : > "$REQUESTS_LOG"
@@ -57,72 +60,4 @@ fi
 # the python server fails to bind.
 echo "$PORT"
 
-exec python3 - "$PORT" "$FIXTURES_DIR" "$REQUESTS_LOG" "$DELETE_LOG" <<'PY'
-import os
-import sys
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-port = int(sys.argv[1])
-fixtures = sys.argv[2]
-requests_log = sys.argv[3]
-delete_log = sys.argv[4]
-
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):  # silence default stderr access log
-        pass
-
-    def _handle(self, method):
-        # Strip the query string for fixture routing — the provisioner
-        # now paginates with ``?limit=100&offset=N`` and a future caller
-        # might add other filters. Fixtures are keyed on METHOD+PATH,
-        # not on query params; otherwise each paginated call would need
-        # its own fixture file and a single canonical mock couldn't
-        # serve a multi-page sequence with one body. If a future test
-        # needs to assert on query params, the requests.log records the
-        # raw path (with query string) for that purpose.
-        from urllib.parse import urlsplit
-        raw_path = self.path
-        path = urlsplit(raw_path).path
-        with open(requests_log, "a") as f:
-            f.write(f"{method} {raw_path}\n")
-        if method == "DELETE":
-            with open(delete_log, "a") as f:
-                f.write(f"{raw_path}\n")
-            body = b'{"data":null}'
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        norm = path.replace("/", "_")
-        body_path = os.path.join(fixtures, f"{method}_{norm}.json")
-        status_path = os.path.join(fixtures, f"{method}_{norm}.status")
-        status = 200
-        body = b"{}"
-        if os.path.exists(status_path):
-            with open(status_path) as f:
-                status = int(f.read().strip() or 200)
-        if os.path.exists(body_path):
-            with open(body_path, "rb") as f:
-                body = f.read()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_GET(self):
-        self._handle("GET")
-
-    def do_POST(self):
-        self._handle("POST")
-
-    def do_DELETE(self):
-        self._handle("DELETE")
-
-
-httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-httpd.serve_forever()
-PY
+exec python3 "$SCRIPT_DIR/mock-openrouter_impl.py" "$PORT"

@@ -39,9 +39,13 @@ JSON
     MOCK="$REPO_ROOT/tests/helpers/mock-tenancy-broker.sh"
     _base=$((18766 + (RANDOM % 200)))
     export MOCK_PORT="$_base"
-    FIXTURES="$BATS_TEST_TMPDIR/tenancy-fixtures"
-    export MOCK_FIXTURES_DIR="$FIXTURES"
-    mkdir -p "$FIXTURES"
+    FIXTURES="$REPO_ROOT/tests/helpers/fixtures"
+    # The mock writes its request log next to the impl
+    # (tests/helpers/requests.log, NOT inside fixtures/) and truncates
+    # it on startup.
+    REQUESTS_LOG="$REPO_ROOT/tests/helpers/requests.log"
+
+    rm -rf "$FIXTURES"; mkdir -p "$FIXTURES"
     "$MOCK" "$MOCK_PORT" >"$BATS_TEST_TMPDIR/mock.stdout" 2>"$BATS_TEST_TMPDIR/mock.stderr" &
     MOCK_PID=$!
     # Wait for the mock to accept connections.
@@ -66,10 +70,10 @@ teardown() {
 }
 
 # Valid round-2 verify response: triple + valid:true. The mock routes
-# POST /auth/verify to fixtures/POST__auth_verify.json (path /auth/verify
-# normalizes to _auth_verify, mirroring mock-openrouter.sh).
+# POST /auth/verify to fixtures/POST_verify.json (path /auth/verify
+# normalizes to basename "_verify", mirroring mock-openrouter.sh).
 valid_fixture() {
-    cat > "$FIXTURES/POST__auth_verify.json" <<'JSON'
+    cat > "$FIXTURES/POST_verify.json" <<'JSON'
 {"triple": {"counterparty_id": "cp-1", "client_id": "cl-1", "project_id": "pj-1"}, "valid": true, "exp": 1893456000}
 JSON
 }
@@ -83,11 +87,11 @@ JSON
     echo "$output" | grep -q '"tenant": "ok"'
     echo "$output" | grep -q '"counterparty_id": "cp-1"'
     # The mock actually received the verify call.
-    grep -q 'POST /auth/verify' "$FIXTURES/requests.log"
+    grep -q 'POST /auth/verify' "$REQUESTS_LOG"
 }
 
 @test "P1: broker wired + invalid JWT (valid:false) -> reject fail-closed" {
-    cat > "$FIXTURES/POST__auth_verify.json" <<'JSON'
+    cat > "$FIXTURES/POST_verify.json" <<'JSON'
 {"triple": null, "valid": false, "exp": null}
 JSON
     run python3 "$SCRIPT" evaluate --actor op-1234 --agent linux_desktop_seed \
@@ -100,9 +104,9 @@ JSON
 
 @test "P1: broker wired + HTTP 500 from verify -> reject fail-closed" {
     valid_fixture
-    # Mock routes status to the same double-underscore name as the body
-    # (path /auth/verify -> _auth_verify).
-    echo 500 > "$FIXTURES/POST__auth_verify.status"
+    # Mock routes status to the same basename name as the body
+    # (path /auth/verify -> _verify).
+    echo 500 > "$FIXTURES/POST_verify.status"
     run python3 "$SCRIPT" evaluate --actor op-1234 --agent linux_desktop_seed \
         --tenant-jwt "eyJhbGciOiJSUzI1NiJ9" --principals "$REGISTRY"
     [ "$status" -eq 1 ]

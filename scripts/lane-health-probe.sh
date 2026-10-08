@@ -105,27 +105,9 @@ read_recent_logs() {
     else
         local log_file="$HOME/.local/log/openclaw-gateway/openclaw-gateway.log"
         if [[ -f "$log_file" ]]; then
-            # Tail by mtime is unreliable; use a python one-liner to slice
+            # Tail by mtime is unreliable; use a python helper to slice
             # the last 5 minutes by timestamp.
-            python3 - "$log_file" <<'PY' || true
-import datetime as dt
-import sys
-
-path = sys.argv[1]
-cutoff = dt.datetime.utcnow() - dt.timedelta(minutes=5)
-out = []
-with open(path, errors="replace") as fh:
-    for line in fh:
-        # Lines look like: "Jun 28 18:48:41 host openclaw[336954]: ..."
-        try:
-            ts = dt.datetime.strptime(line[:15], "%b %d %H:%M:%S")
-            ts = ts.replace(year=dt.datetime.utcnow().year)
-            if ts >= cutoff:
-                out.append(line)
-        except ValueError:
-            continue
-sys.stdout.write("".join(out))
-PY
+            python3 "$SCRIPT_DIR/lib-tail-by-timestamp.py" "$log_file" || true
         fi
     fi
 }
@@ -178,12 +160,12 @@ main() {
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
         local sk age kind last_prog last_age recovery
-        sk="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["sessionKey"])')"
-        age="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["ageSeconds"])')"
-        kind="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["activeWorkKind"])')"
-        last_prog="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["lastProgress"])')"
-        last_age="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["lastProgressAge"])')"
-        recovery="$(echo "$entry" | python3 -c 'import json,sys;print(json.load(sys.stdin)["recovery"])')"
+        sk="$(echo "$entry" | python3 "$SCRIPT_DIR/lib-json-entry-get.py" sessionKey)"
+        age="$(echo "$entry" | python3 "$SCRIPT_DIR/lib-json-entry-get.py" ageSeconds)"
+        kind="$(echo "$entry" | python3 "$SCRIPT_DIR/lib-json-entry-get.py" activeWorkKind)"
+        last_prog="$(echo "$entry" | python3 "$SCRIPT_DIR/lib-json-entry-get.py" lastProgress)"
+        last_age="$(echo "$entry" | python3 "$SCRIPT_DIR/lib-json-entry-get.py" lastProgressAge)"
+        recovery="$(echo "$entry" | python3 "$SCRIPT_DIR/lib-json-entry-get.py" recovery)"
 
         # Apply the wall-clock + progress budget.
         local age_ok="false"
