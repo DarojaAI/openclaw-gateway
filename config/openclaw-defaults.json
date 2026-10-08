@@ -29,8 +29,78 @@
         "maxConcurrent": 4
       },
       "thinkingDefault": "minimal"
+    },
+    "entries": {
+      "daroja_coding_agent": {
+        "workspace": "/home/desktopuser/GithubProjects/daroja-coding-agent",
+        "runtime": {
+          "type": "acp",
+          "acp": {
+            "agent": "opencode",
+            "backend": "acpx",
+            "mode": "persistent"
+          }
+        }
+      },
+      "darojaai_architect": {
+        "workspace": "/home/desktopuser/GithubProjects/darojaai_architect",
+        "runtime": {
+          "type": "acp",
+          "acp": {
+            "agent": "opencode",
+            "backend": "acpx",
+            "mode": "persistent"
+          }
+        }
+      },
+      "ai_governance": {
+        "workspace": "/home/desktopuser/GithubProjects/ai-governance",
+        "runtime": {
+          "type": "acp",
+          "acp": {
+            "agent": "opencode",
+            "backend": "acpx",
+            "mode": "persistent"
+          }
+        }
+      }
     }
   },
+  "bindings": [
+    {
+      "type": "route",
+      "agentId": "daroja_coding_agent",
+      "match": {
+        "channel": "discord",
+        "peer": {
+          "kind": "channel",
+          "id": "__OPENCLAW_DISCORD_CHANNEL_ID__"
+        }
+      }
+    },
+    {
+      "type": "route",
+      "agentId": "darojaai_architect",
+      "match": {
+        "channel": "discord",
+        "peer": {
+          "kind": "channel",
+          "id": "__OPENCLAW_DISCORD_CHANNEL_ID__"
+        }
+      }
+    },
+    {
+      "type": "route",
+      "agentId": "ai_governance",
+      "match": {
+        "channel": "discord",
+        "peer": {
+          "kind": "channel",
+          "id": "__OPENCLAW_DISCORD_CHANNEL_ID__"
+        }
+      }
+    }
+  ],
   "skills": {
     "workshop": {
       "approvalPolicy": "auto"
@@ -117,7 +187,7 @@
     }
   },
   "meta": {
-    "lastTouchedVersion": "2026.4.26"
+    "lastTouchedVersion": "2026.9.8"
   },
   "models": {
     "mode": "merge",

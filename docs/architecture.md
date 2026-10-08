@@ -151,6 +151,99 @@ Maps provider names → auth profile names:
 
 ---
 
+## Per-Agent ACP Runtime Bindings
+
+Code-writing agents (`daroja_coding_agent`, `darojaai_architect`,
+`ai_governance`) run their `write`/`edit` work through an external
+ACP coding harness (opencode) instead of the embedded tool runtime.
+Per-agent entry shapes live at `agents.entries.<id>` in the canonical
+L3b template `config/openclaw-defaults.json`:
+
+```json
+"agents": {
+  "entries": {
+    "daroja_coding_agent": {
+      "workspace": "/home/desktopuser/GithubProjects/daroja-coding-agent",
+      "runtime": {
+        "type": "acp",
+        "acp": {
+          "agent": "opencode",
+          "backend": "acpx",
+          "mode": "persistent"
+        }
+      }
+    }
+  }
+}
+```
+
+- `runtime.acp.agent` — ACP harness agent id (`opencode` here).
+- `runtime.acp.backend` — ACP backend (`acpx`); falls back to global
+  `acp.backend` when omitted.
+- `runtime.acp.mode` — schema enum is **`persistent` | `oneshot`** only
+  (see `AgentRuntimeAcpConfig` in the installed OpenClaw 2026.8.2
+  `dist/types.openclaw-*.d.ts`, and `agents.entries.*.runtime.acp.mode`
+  in `linux-desktop-seed`'s `schemas/openclaw-config.schema.json`).
+  The runtime rejects any other value, so a "session"-flavored entry
+  must be expressed as `persistent` (long-lived coding sessions).
+- **No `cwd`** — ACP sessions default to the entry's `workspace`; a
+  separate `cwd` is only needed to diverge from the workspace.
+- Workspace paths mirror the seed's VM clone convention
+  (`/home/desktopuser/GithubProjects/<repo>`); `ai_governance` is a
+  "lone agent" (no repo clone) and keeps a workspace path for the
+  runtime.
+
+### Per-Agent OpenRouter Keys (auth-profiles sync)
+
+Each agent's model traffic uses its own child key — never the master.
+The mechanism implemented in `scripts/openrouter-provision.py`:
+
+- The `sync` subcommand (`scripts/openrouter-provision.py:10-23`,
+  `:566-573`) is the deploy-time entry point: it lists every child key,
+  provisions one per missing agent, and emits it as JSONL on stdout
+  ("so the caller can capture each key string and write it into the
+  agent's `auth-profiles.json`").
+- The caller is the seed's `configure-openclaw-agent.sh`, which writes
+  the child key into `~/.openclaw/agents/<id>/agent/auth-profiles.json`
+  (mode 0600) — the per-agent credential file the ACP harness uses.
+- The master key (`OPENROUTER_PROVISIONING_KEY`) is only a management
+  credential for `POST/GET/DELETE /api/v1/keys`; it is never wired into
+  spawned sessions. `key_info` is the only child-key-authenticated call
+  (`scripts/openrouter-provision.py:436-442`; see also
+  `docs/concepts/per-agent-openrouter-keys.md`).
+
+### Discord Channel Bindings — Env-Var Flow
+
+Discord routing for the per-agent entries uses the top-level
+`bindings` array in the L3b template, with a clearly marked env
+placeholder — never a hardcoded snowflake (DAT contract):
+
+```json
+"bindings": [
+  {
+    "type": "route",
+    "agentId": "daroja_coding_agent",
+    "match": {
+      "channel": "discord",
+      "peer": { "kind": "channel", "id": "__OPENCLAW_DISCORD_CHANNEL_ID__" }
+    }
+  }
+]
+```
+
+The `__OPENCLAW_DISCORD_CHANNEL_ID__` placeholder follows the
+template's existing env-substitution convention (`__DISCORD_BOT_TOKEN__`,
+`__OPENROUTER_API_KEY__`, `${A2A_*_TOKEN}`) and is replaced at deploy
+with the per-environment value of **`OPENCLAW_DISCORD_CHANNEL_ID`**
+(primary Discord channel for that env, one value per GitHub
+environment). On VMs where the bind chain needs per-agent channels,
+the seed's per-repo `OPENCLAW_<ENV>_DISCORD_CHANNEL` actions variables
+(`scripts/openclaw-bind-repos.sh`) override the template binding at
+bind time — the placeholder exists so the template stays
+schema-valid and env-agnostic between deploys.
+
+---
+
 ## Discord Response Delivery
 
 ### `messages.groupChat.visibleReplies`
