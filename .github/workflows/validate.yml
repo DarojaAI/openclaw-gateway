@@ -38,6 +38,14 @@ jobs:
           python3 -c "import json; json.load(open('config/openclaw-defaults.json'))"
           python3 -c "import json; json.load(open('config/openclaw-test-vm.json'))"
 
+      - name: Validate config schema shape (reject legacy agents keys)
+        # The gateway rejects unrecognized keys under 'agents' at boot
+        # (exit 78); this gate keeps the legacy agents.list shape from
+        # returning through the canonical config sources (#133).
+        run: |
+          python3 scripts/merge-openclaw-config.py config/openclaw-defaults.json --validate
+          python3 scripts/merge-openclaw-config.py config/openclaw-test-vm.json --validate
+
       - name: Check skill files exist
         run: |
           test -f config/skills/model-management/SKILL.md

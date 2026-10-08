@@ -79,6 +79,13 @@ deleting oldest-first when either is exceeded. Dry-run is the default; real
 deletion requires `--delete`. CLI flags override the `PRUNE_DIR`,
 `PRUNE_MAX_AGE_DAYS`, `PRUNE_MAX_BYTES` env vars.
 
+**Concurrent pruners:** the pruner takes an exclusive `flock` on
+`<target>/.prune-retention.lock` for its whole scan+delete cycle.
+`linux-desktop-seed`'s (unmerged) `prune-openclaw-staging.sh` targets the same
+`tmp/plugin-captures` dir — if it lands, prefer one owner per directory; the
+lock only prevents interleaving mid-cycle, it does not reconcile different
+retention policies.
+
 Manual purge policy (run by hand when the dir is overflowing):
 
 ```bash

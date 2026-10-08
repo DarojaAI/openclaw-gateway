@@ -41,8 +41,25 @@ log_error() { echo "[ERROR] $*" >&2; }
 
 # ---- Knobs -----------------------------------------------------------------
 
+# Knobs live in an env-file so operators can retune without reinstalling.
+# The installer writes the defaults once; it never overwrites an existing
+# file. The pruner reads these exact var names as CLI-flag fallbacks.
+ENV_FILE="$HOME/.openclaw/plugin-captures-retention.env"
 MAX_AGE_DAYS="${OPENCLAW_PLUGIN_CAPTURES_MAX_AGE_DAYS:-2}"
 MAX_BYTES="${OPENCLAW_PLUGIN_CAPTURES_MAX_BYTES:-2G}"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+	cat > "$ENV_FILE" <<EOF
+# Tuning for openclaw-plugin-captures-retention.service (systemctl --user
+# daemon-reload + restart the service after editing).
+PRUNE_MAX_AGE_DAYS=${MAX_AGE_DAYS}
+PRUNE_MAX_BYTES=${MAX_BYTES}
+EOF
+	chmod 0644 "$ENV_FILE"
+	log_info "Wrote knobs file: $ENV_FILE (defaults max-age=${MAX_AGE_DAYS}d, max-bytes=${MAX_BYTES})"
+else
+	log_info "Knobs file exists, left untouched: $ENV_FILE"
+fi
 
 # ---- Preconditions ---------------------------------------------------------
 
@@ -88,7 +105,8 @@ Documentation=https://github.com/DarojaAI/openclaw-gateway
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/openclaw-plugin-captures-prune --dir %h/.openclaw/tmp/plugin-captures --max-age-days ${MAX_AGE_DAYS} --max-bytes ${MAX_BYTES} --delete
+EnvironmentFile=%h/.openclaw/plugin-captures-retention.env
+ExecStart=/bin/sh -c 'exec %h/.local/bin/openclaw-plugin-captures-prune --dir %h/.openclaw/tmp/plugin-captures --max-age-days "\$PRUNE_MAX_AGE_DAYS" --max-bytes "\$PRUNE_MAX_BYTES" --delete'
 StandardOutput=append:%h/.local/log/openclaw-plugin-captures/prune.log
 StandardError=append:%h/.local/log/openclaw-plugin-captures/prune.log
 EOF

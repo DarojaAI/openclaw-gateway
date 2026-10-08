@@ -41,6 +41,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import re
 import sys
@@ -214,9 +215,24 @@ def main() -> int:
         return 0
 
     root = Path(target).expanduser()
+    # Exclusive lock for the whole scan+delete: other pruners (e.g.
+    # linux-desktop-seed's prune-openclaw-staging.sh targets the same
+    # plugin-captures dir) must not interleave with the plan/apply cycle.
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / ".prune-retention.lock"
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        return _run_locked(root, max_age_days, max_bytes, args.delete)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
+
+
+def _run_locked(root: Path, max_age_days: int, max_bytes: int, delete: bool) -> int:
     to_delete = plan_prune(root, max_age_days, max_bytes)
 
-    mode = "delete" if args.delete else "dry-run"
+    mode = "delete" if delete else "dry-run"
     freed = sum(sz for _p, sz in to_delete)
 
     print(
@@ -224,7 +240,7 @@ def main() -> int:
         f"max_bytes={fmt_bytes(max_bytes) if max_bytes else 'unlimited'} "
         f"mode={mode}"
     )
-    verb = "would delete" if not args.delete else "deleted"
+    verb = "would delete" if not delete else "deleted"
     for p, _sz in to_delete:
         print(f"{verb}: {p}")
 
@@ -235,7 +251,7 @@ def main() -> int:
     else:
         print("summary: nothing to prune")
 
-    if not args.delete:
+    if not delete:
         return 0
 
     failed = 0
