@@ -1,8 +1,7 @@
 {
   "meta": {
-    "name": "Test VM OpenCLAW Configuration",
-    "description": "Working config for test VM with per-repo agent routing",
-    "lastUpdated": "2026-04-14T01:35:00Z"
+    "lastTouchedVersion": "2026.9.8",
+    "lastTouchedAt": "2026-10-08T22:30:00.000Z"
   },
   "auth": {
     "profiles": {
@@ -54,28 +53,7 @@
     "lastRunCommand": "doctor",
     "lastRunMode": "local"
   },
-  "meta": {
-    "lastTouchedVersion": "2026.4.26",
-    "lastTouchedAt": "2026-04-14T00:13:19.769Z"
-  },
   "agents": {
-    "list": [
-      {
-        "id": "main"
-      },
-      {
-        "id": "linux-desktop-seed",
-        "name": "linux-desktop-seed",
-        "workspace": "/home/desktopuser/Projects/linux-desktop-seed",
-        "agentDir": "/home/desktopuser/.openclaw/agents/linux-desktop-seed/agent"
-      },
-      {
-        "id": "test-agent",
-        "name": "test-agent",
-        "workspace": "/home/desktopuser/Projects/test-agent",
-        "agentDir": "/home/desktopuser/.openclaw/agents/test-agent/agent"
-      }
-    ],
     "defaults": {
       "model": "minimax/MiniMax-M2.7",
       "thinkingDefault": "minimal",
@@ -86,6 +64,19 @@
         "reserveTokensFloor": 20000,
         "maxHistoryShare": 0.1,
         "model": "anthropic/claude-haiku-4-5"
+      }
+    },
+    "entries": {
+      "main": {},
+      "linux-desktop-seed": {
+        "name": "linux-desktop-seed",
+        "workspace": "/home/desktopuser/Projects/linux-desktop-seed",
+        "agentDir": "/home/desktopuser/.openclaw/agents/linux-desktop-seed/agent"
+      },
+      "test-agent": {
+        "name": "test-agent",
+        "workspace": "/home/desktopuser/Projects/test-agent",
+        "agentDir": "/home/desktopuser/.openclaw/agents/test-agent/agent"
       }
     }
   },
@@ -159,8 +150,8 @@
               "image"
             ],
             "cost": {
-              "input": 8e-7,
-              "output": 0.000004
+              "input": 8e-07,
+              "output": 4e-06
             },
             "contextWindow": 200000,
             "maxTokens": 8192
