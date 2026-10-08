@@ -329,4 +329,47 @@ else
     log_warn "Post-deploy memory-index check not found at $memory_check"
 fi
 
+# 10. Optional plugin-captures retention prune (issue #134).
+#
+# Why: ~/.openclaw/tmp/plugin-captures/ grows unbounded (~1.8 GiB/day
+# observed). Bounded retention keeps age and total-size caps on that dir,
+# deleting oldest-first when either is exceeded.
+#
+# Behavior:
+#   - Opt-in: only runs when OPENCLAW_PLUGIN_CAPTURES_RETENTION=1.
+
+#   - Dry-run by default: prints what would be deleted, deletes
+#     nothing. Actual deletion additionally requires
+#     OPENCLAW_PLUGIN_CAPTURES_RETENTION_DELETE=1.
+
+#   - Knobs (passed through the env to scripts/lib-prune-retention.py):
+#       PRUNE_MAX_AGE_DAYS  prune files older than N days (default: 14)
+#       PRUNE_MAX_BYTES      keep total size at or below SIZE, K/M/G/T
+#                             suffixes ok (default: 20G)
+#   - Honors $HOME so sandbox tests can point at a fake home.
+#
+# See scripts/lib-prune-retention.py for the full CLI/env contract.
+if [[ "${OPENCLAW_PLUGIN_CAPTURES_RETENTION:-0}" == "1" ]]; then
+    prune_script="$REPO_ROOT/scripts/lib-prune-retention.py"
+    if [[ -f "$prune_script" ]]; then
+        prune_args=(--dir "${HOME:?HOME must be set}/.openclaw/tmp/plugin-captures")
+        if [[ "${OPENCLAW_PLUGIN_CAPTURES_RETENTION_DELETE:-0}" == "1" ]]; then
+            prune_args+=(--delete)
+            log_info "plugin-captures retention prune enabled (DELETE mode)"
+        else
+            log_info "plugin-captures retention prune enabled (dry-run; set OPENCLAW_PLUGIN_CAPTURES_RETENTION_DELETE=1 to actually delete)"
+        fi
+        if python3 "$prune_script" "${prune_args[@]}"; then
+            log_info "plugin-captures retention prune complete"
+        else
+            rc=$?
+            log_warn "plugin-captures retention prune exited $rc (non-fatal; deploy continues)"
+        fi
+    else
+        log_warn "Retention pruner not found at $prune_script (skipping prune)"
+    fi
+else
+    log_warn "plugin-captures retention prune skipped (set OPENCLAW_PLUGIN_CAPTURES_RETENTION=1 to enable)"
+fi
+
 log_info "OpenClaw Gateway installation complete"
