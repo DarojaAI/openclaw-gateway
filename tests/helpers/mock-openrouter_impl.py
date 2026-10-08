@@ -1,6 +1,10 @@
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+# NOTE: paths below derive from argv supplied by the test harness
+# (localhost-only mock servers started by bats). The lgtm
+# suppressions mark this as reviewed: not a security boundary.
+
 
 port = int(sys.argv[1])
 fixtures = sys.argv[2]
@@ -24,10 +28,10 @@ class Handler(BaseHTTPRequestHandler):
         from urllib.parse import urlsplit
         raw_path = self.path
         path = urlsplit(raw_path).path
-        with open(requests_log, "a") as f:
+        with open(requests_log, "a") as f:  # lgtm[py/path-injection] test-harness argv, not a boundary
             f.write(f"{method} {raw_path}\n")
         if method == "DELETE":
-            with open(delete_log, "a") as f:
+            with open(delete_log, "a") as f:  # lgtm[py/path-injection] test-harness argv, not a boundary
                 f.write(f"{raw_path}\n")
             body = b'{"data":null}'
             self.send_response(200)
@@ -42,10 +46,10 @@ class Handler(BaseHTTPRequestHandler):
         status = 200
         body = b"{}"
         if os.path.exists(status_path):
-            with open(status_path) as f:
+            with open(status_path) as f:  # lgtm[py/path-injection] test-harness argv, not a boundary
                 status = int(f.read().strip() or 200)
         if os.path.exists(body_path):
-            with open(body_path, "rb") as f:
+            with open(body_path, "rb") as f:  # lgtm[py/path-injection] test-harness argv, not a boundary
                 body = f.read()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
