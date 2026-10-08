@@ -165,8 +165,31 @@ def load_config(config_path: Path = CONFIG_PATH) -> dict:
         sys.exit(1)
 
 
+ALLOWED_AGENTS_KEYS = {"defaults", "entries", "ownership"}
+
+
+def assert_config_schema_safe(config: dict) -> None:
+    """Refuse to persist an openclaw.json the gateway's validator would reject.
+
+    The gateway rejects unknown keys under `agents` at load/boot (`agents:
+    Unrecognized key: "list"` -> exit 78). This script dumps the whole config
+    unvalidated, so it must gate itself: abort rather than poison the file.
+    """
+    agents = config.get("agents")
+    if isinstance(agents, dict):
+        legacy = sorted(set(agents) - ALLOWED_AGENTS_KEYS)
+        if legacy:
+            log_error(
+                "Refusing to save config: legacy/unrecognized key(s) under 'agents': "
+                + ", ".join(legacy)
+                + f" (remove them from {CONFIG_PATH} first; the gateway rejects them at boot)"
+            )
+            sys.exit(1)
+
+
 def save_config(config: dict, config_path: Path = CONFIG_PATH):
     """Save OpenClaw config with timestamped backup."""
+    assert_config_schema_safe(config)
     if config_path.exists():
         backup = config_path.parent / f"openclaw.json.backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         shutil.copy2(config_path, backup)
@@ -452,12 +475,14 @@ def cmd_switch(args):
     # Update default model
     agent_path = ["agents", "defaults"]
     if args.agent:
-        # Per-agent override if the agent exists in config
-        agent_list = config.get("agents", {}).get("list", [])
-        if any(a.get("id") == args.agent for a in agent_list):
-            agent_path = ["agents", "list"]
-            # Find the specific agent entry -- this is more complex with OpenClaw's list format
-            # For now, we only support default agent switching
+        # Per-agent override if the agent exists in the current schema (agents.entries,
+        # keyed by id). The legacy `agents.list` array shape is NOT read or written here:
+        # saving this script's full-config dump with a `list` key makes the gateway reject
+        # every reload with `agents: Unrecognized key: "list"`.
+        agent_entries = config.get("agents", {}).get("entries", {})
+        if isinstance(agent_entries, dict) and args.agent in agent_entries:
+            # Find the specific agent entry -- per-agent switching is not yet supported
+            # here; use the gateway CLI for per-entry model overrides.
             log_warn(f"Per-agent switching not yet fully supported; updating defaults")
         else:
             log_warn(f"Agent '{args.agent}' not found in config; updating defaults")

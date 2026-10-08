@@ -66,4 +66,38 @@ No external dependencies — uses Python stdlib only.
 
 The daroja-intelligence-console proxies `/api/lifecycle` to `LIFECYCLE_URL`.
 Set `LIFECYCLE_URL=http://127.0.0.1:8099` (or wherever this server runs)
-to connect the console's Lifecycle view to this endpoint.
+to connectthe console's Lifecycle view to this endpoint.
+
+## Housekeeping: plugin-captures retention
+
+`~/.openclaw/tmp/plugin-captures/` grows unbounded (~1.8 GiB/day observed;
+[issue #134](https://github.com/DarojaAI/openclaw-gateway/issues/134)). The
+bounded-retention pruner `scripts/lib-prune-retention.py` keeps that dir (or
+any target dir) under two knobs — `--max-age-days` (default 14 days) and
+`--max-bytes` (default 20 GiB; K/M/G/T suffixes ok; 0 = no cap) —
+deleting oldest-first when either is exceeded. Dry-run is the default; real
+deletion requires `--delete`. CLI flags override the `PRUNE_DIR`,
+`PRUNE_MAX_AGE_DAYS`, `PRUNE_MAX_BYTES` env vars.
+
+**Concurrent pruners:** the pruner takes an exclusive `flock` on
+`<target>/.prune-retention.lock` for its whole scan+delete cycle.
+`linux-desktop-seed`'s (unmerged) `prune-openclaw-staging.sh` targets the same
+`tmp/plugin-captures` dir — if it lands, prefer one owner per directory; the
+lock only prevents interleaving mid-cycle, it does not reconcile different
+retention policies.
+
+Manual purge policy (run by hand when the dir is overflowing):
+
+```bash
+# Preview what the policy would delete
+python3 scripts/lib-prune-retention.py --dir ~/.openclaw/tmp/plugin-captures
+
+# Apply the same policy
+python3 scripts/lib-prune-retention.py --dir ~/.openclaw/tmp/plugin-captures --delete
+```
+
+`scripts/install/deploy.sh` can run the pruner as an optional housekeeping
+step: set `OPENCLAW_PLUGIN_CAPTURES_RETENTION=1` to enable it (still
+dry-run by default) and additionally `OPENCLAW_PLUGIN_CAPTURES_RETENTION_DELETE=1`
+to let it actually delete. Never point it at the live prod plugin-captures
+dir from a scratch checkout; run it on the VM whose data it should prune.

@@ -47,3 +47,14 @@ bash -n scripts/*.sh scripts/install/*.sh scripts/remote/*.sh
 # Config schema
 python3 scripts/merge-openclaw-config.py --validate
 ```
+
+# Upstream (openclaw/openclaw) filing hygiene
+
+Learned 2026-10-08 after withdrawing two premature filings (#167495, #167496):
+
+- **Verify the mechanism in the installed runtime's code before filing.** Symptoms (journal lines, DB sizes) are evidence of state, not of cause. Never attribute a defect to a specific code path without reading that path — grep `dist/` (or a source checkout) for the claimed behavior first.
+- **Re-verify at every escalation of the claim.** The PR-prep code read caught a bad filing that the filing-time check missed (#167495). Each stage that strengthens the claim (comment → filing → fix proposal → PR) needs fresh evidence for the mechanism, not just the symptom.
+- **Issue bodies and incident postmortems are claims, not evidence.** Re-derive every causal claim independently before restating it in a public tracker.
+- **Search for prior art first.** Several defect families (e.g. plugin-capture staging growth) already have multiple open reports; duplicates add noise.
+- **Check ecosystem tooling before blaming the runtime.** Scripts in this repo and `linux-desktop-seed` write gateway state directly and unvalidated (e.g. `scripts/openclaw-model-manager.py` used to dump the whole `openclaw.json` with legacy `agents.list`). Many "openclaw bugs" are our tooling.
+- **Use the issue templates** (`bug_report.yml`, `feature_request.yml`): `[Bug]:`/`[Feature]:` title prefix, structured fields, version/OS, grounded repro; features and design changes route through the feature form or Discord first.

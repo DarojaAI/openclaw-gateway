@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `schemas/agents-lock.schema.json`: same new optional fields, mirrored from the source agent-config schema.
 - `config/openclaw-agent-config.example.yaml`: documents the new fields with the default dry-run-for-one-week pattern from RFC #48.
 - `config/agents.lock.toml`: every agent entry now declares `dry_run = true` and `enforce_channel_pinning = false` explicitly.
+- `scripts/lib-prune-retention.py`: bounded-retention pruner for a target dir (age-and-size caps, oldest-first; dry-run default, `--delete` to apply; issue #134). Wired in as an optional deploy housekeeping step (opt-in via `OPENCLAW_PLUGIN_CAPTURES_RETENTION=1`, deletion additionally gated by `OPENCLAW_PLUGIN_CAPTURES_RETENTION_DELETE=1`; documented in `docs/lifecycle-api.md`). Timer knobs live in `~/.openclaw/plugin-captures-retention.env` (retune without reinstall); pruner holds an exclusive flock on `<target>/.prune-retention.lock` for its scan+delete cycle (coordinates with seed's `prune-openclaw-staging.sh`).
+- `.github/workflows/validate.yml`: CI gate running `scripts/merge-openclaw-config.py --validate` on both canonical configs, so the legacy `agents.list` shape cannot return through the template (#133 follow-up).
+- `config/openclaw-defaults.json`: per-agent ACP runtime bindings for `daroja_coding_agent`, `darojaai_architect`, `ai_governance` (`agents.entries.*.runtime` with `type=acp`, `agent=opencode`, `backend=acpx`, `mode=persistent`; no `cwd`; issue #118).
+- `config/openclaw-defaults.json`: top-level `bindings` array with Discord route entries for the three ACP agents, channel id as the `__OPENCLAW_DISCORD_CHANNEL_ID__` env placeholder (no hardcoded snowflakes; per-env value injected at deploy).
+- `docs/tools/acp-agents.md`: multi-agent ACP runtime binding reference (entry shape, ACP mode enum, per-agent OpenRouter auth-profiles sync, Discord channel env-var flow).
+- `docs/architecture.md`: per-agent ACP runtime bindings section — documents the per-agent OpenRouter key mechanism actually implemented in `scripts/openrouter-provision.py` (auth-profiles sync; master key never wired into sessions; file/line references) and the Discord channel env-var flow.
 
 ### Changed
 
