@@ -50,8 +50,15 @@ class Handler(BaseHTTPRequestHandler):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", norm):
             self.send_error(404)
             return
-        body_path = os.path.join(FIXTURES_DIR, f"{method}_{norm}.json")
-        status_path = os.path.join(FIXTURES_DIR, f"{method}_{norm}.status")
+        fixtures_root = os.path.realpath(FIXTURES_DIR)
+        body_path = os.path.realpath(os.path.join(FIXTURES_DIR, f"{method}_{norm}.json"))
+        status_path = os.path.realpath(os.path.join(FIXTURES_DIR, f"{method}_{norm}.status"))
+        if os.path.commonpath([fixtures_root, body_path]) != fixtures_root:
+            self.send_error(404)
+            return
+        if os.path.commonpath([fixtures_root, status_path]) != fixtures_root:
+            self.send_error(404)
+            return
         status = 200
         body = b"{}"
         if os.path.exists(status_path):
