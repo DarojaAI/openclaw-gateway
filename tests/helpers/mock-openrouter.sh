@@ -14,8 +14,9 @@
 # same prefix with a ".status" suffix. The body file contains the
 # raw bytes to return; the status file contains a single integer
 # HTTP status. Every request is recorded into
-# "$FIXTURES_DIR/requests.log" (one line per request: METHOD PATH).
-# DELETE calls additionally go into "$FIXTURES_DIR/delete_calls.log"
+# "$SCRIPT_DIR/requests.log" (one line per request: METHOD PATH), the
+# same location the python impl writes (its __file__ dir == SCRIPT_DIR).
+# DELETE calls additionally go into "$SCRIPT_DIR/delete_calls.log"
 # (just the path), since DELETE responses are usually empty and we
 # still want to assert the right hash was passed.
 #
@@ -40,8 +41,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PORT="${MOCK_PORT:-${1:-18765}}"
 FIXTURES_DIR="$SCRIPT_DIR/fixtures"
-REQUESTS_LOG="$FIXTURES_DIR/requests.log"
-DELETE_LOG="$FIXTURES_DIR/delete_calls.log"
+REQUESTS_LOG="$SCRIPT_DIR/requests.log"
+DELETE_LOG="$SCRIPT_DIR/delete_calls.log"
 
 mkdir -p "$FIXTURES_DIR"
 : > "$REQUESTS_LOG"

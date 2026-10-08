@@ -40,6 +40,10 @@ JSON
     _base=$((18766 + (RANDOM % 200)))
     export MOCK_PORT="$_base"
     FIXTURES="$REPO_ROOT/tests/helpers/fixtures"
+    # The mock writes its request log next to the impl
+    # (tests/helpers/requests.log, NOT inside fixtures/) and truncates
+    # it on startup.
+    REQUESTS_LOG="$REPO_ROOT/tests/helpers/requests.log"
 
     rm -rf "$FIXTURES"; mkdir -p "$FIXTURES"
     "$MOCK" "$MOCK_PORT" >"$BATS_TEST_TMPDIR/mock.stdout" 2>"$BATS_TEST_TMPDIR/mock.stderr" &
@@ -83,7 +87,7 @@ JSON
     echo "$output" | grep -q '"tenant": "ok"'
     echo "$output" | grep -q '"counterparty_id": "cp-1"'
     # The mock actually received the verify call.
-    grep -q 'POST /auth/verify' "$FIXTURES/requests.log"
+    grep -q 'POST /auth/verify' "$REQUESTS_LOG"
 }
 
 @test "P1: broker wired + invalid JWT (valid:false) -> reject fail-closed" {

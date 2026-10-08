@@ -32,8 +32,9 @@
 #   server so the next test starts clean.
 # - Mock fixtures are named <METHOD>_<BASENAME_OF_PATH>.json and
 #   <METHOD>_<BASENAME_OF_PATH>.status. The mock server records
-#   every request into requests.log and every DELETE into
-#   delete_calls.log so tests can assert on call shape.
+#   every request into tests/helpers/requests.log and every DELETE
+#   into tests/helpers/delete_calls.log (next to the impl, NOT in
+#   fixtures/) so tests can assert on call shape.
 # - We never put a real provisioning key in the environment. The
 #   tests set OPENROUTER_PROVISIONING_KEY to a clearly-fake value
 #   (e.g. "sk-or-v1-test-fake") so a stray echo can never leak a
@@ -48,6 +49,12 @@ setup() {
 	export BATS_TEST_TMPDIR
 	FIXTURES="$REPO_ROOT/tests/helpers/fixtures"
 	rm -rf "$FIXTURES"; mkdir -p "$FIXTURES"
+	# The mock writes its request/delete logs next to the impl
+	# (tests/helpers/*.log, NOT inside fixtures/) and truncates them
+	# on startup, so per-test state is clean even though the paths
+	# are fixed across the whole suite.
+	REQUESTS_LOG="$REPO_ROOT/tests/helpers/requests.log"
+	DELETE_LOG="$REPO_ROOT/tests/helpers/delete_calls.log"
 
 	# Pick a free-ish port. bats 1.2 doesn't have a port helper, so
 	# we ask the kernel for one and use it. If it's busy the mock
@@ -157,10 +164,10 @@ JSON
 
 assert_requests_log_contains() {
 	# assert_requests_log_contains "<METHOD> <PATH>"
-	grep -F -- "$1" "$FIXTURES/requests.log" >/dev/null || {
+	grep -F -- "$1" "$REQUESTS_LOG" >/dev/null || {
 		echo "expected request log to contain: $1" >&2
 		echo "actual requests.log:" >&2
-		cat "$FIXTURES/requests.log" >&2
+		cat "$REQUESTS_LOG" >&2
 		return 1
 	}
 }
@@ -188,7 +195,7 @@ assert_requests_log_contains() {
 	echo "$output" | grep -q "OPENROUTER_PROVISIONING_KEY"
 	# And the request log is empty — the script refused before
 	# touching the network.
-	[ ! -s "$FIXTURES/requests.log" ]
+	[ ! -s "$REQUESTS_LOG" ]
 }
 
 @test "provision: skips when a key with the same label already exists (no duplicate create)" {
@@ -222,7 +229,7 @@ assert_requests_log_contains() {
 	echo "$output" | grep -q '"limit": 25'
 	echo "$output" | grep -q '"limit_reset": "weekly"'
 	# And the network was never touched.
-	[ ! -s "$FIXTURES/requests.log" ]
+	[ ! -s "$REQUESTS_LOG" ]
 }
 
 # ── list ──────────────────────────────────────────────────────────
@@ -302,12 +309,12 @@ JSON
 	# per page, so a single page suffices and we expect one GET. This
 	# baseline test guards against a regression that drops back to
 	# unpaginated single-call behavior.
-	get_count="$(grep -c '^GET /api/v1/keys' "$FIXTURES/requests.log" || true)"
+	get_count="$(grep -c '^GET /api/v1/keys' "$REQUESTS_LOG" || true)"
 	[ "$get_count" -eq 1 ]
 	# But the request path must include ?limit=100 (i.e., the provisioner
 	# is paginating even when a single page suffices — the loop body
 	# is unconditional on first iteration).
-	grep -F 'GET /api/v1/keys?limit=100&offset=0' "$FIXTURES/requests.log" >/dev/null
+	grep -F 'GET /api/v1/keys?limit=100&offset=0' "$REQUESTS_LOG" >/dev/null
 }
 
 @test "list: aggregates across pages when each page is full (regression: 529-key org)" {
@@ -343,12 +350,12 @@ PY
 	echo "$output" | grep -q "hash-099	agent-99"
 	# And the request log shows multiple distinct offsets (proves
 	# the loop is incrementing offset, not stuck at 0).
-	grep -F 'offset=0'   "$FIXTURES/requests.log" >/dev/null
-	grep -F 'offset=100' "$FIXTURES/requests.log" >/dev/null
-	grep -F 'offset=200' "$FIXTURES/requests.log" >/dev/null
+	grep -F 'offset=0'   "$REQUESTS_LOG" >/dev/null
+	grep -F 'offset=100' "$REQUESTS_LOG" >/dev/null
+	grep -F 'offset=200' "$REQUESTS_LOG" >/dev/null
 	# Total requests >= 4 (one per page through the loop); the exact
 	# count is bounded by max_pages, so we don't pin a number here.
-	get_count="$(grep -c '^GET /api/v1/keys' "$FIXTURES/requests.log" || true)"
+	get_count="$(grep -c '^GET /api/v1/keys' "$REQUESTS_LOG" || true)"
 	[ "$get_count" -ge 4 ]
 }
 
@@ -373,7 +380,7 @@ PY
 	# The path includes the hash; the mock records it into the
 	# dedicated delete log so we don't have to grep the path out of
 	# the requests log (which would have to be hash-aware).
-	grep -F "abc123hash" "$FIXTURES/delete_calls.log" >/dev/null
+	grep -F "abc123hash" "$DELETE_LOG" >/dev/null
 }
 
 # ── sync ──────────────────────────────────────────────────────────
@@ -397,7 +404,7 @@ JSON
 	dev_lines="$(echo "$output" | grep -c '"agent": "dev_nexus"' || true)"
 	[ "$dev_lines" -eq 1 ]
 	# Exactly one POST happened, period.
-	post_count="$(grep -c '^POST /api/v1/keys$' "$FIXTURES/requests.log" || true)"
+	post_count="$(grep -c '^POST /api/v1/keys$' "$REQUESTS_LOG" || true)"
 	[ "$post_count" -eq 1 ]
 	# Stderr should report the skip. Bats 1.2 does not capture
 	# stderr separately, so we re-run with 2>&1 merged and just
@@ -421,7 +428,7 @@ JSON
 	echo "$output" | grep -q '"agent": "bond_nexus"'
 	echo "$output" | grep -q '"agent": "dev_nexus"'
 	# We should have called POST twice (once per missing agent).
-	post_count="$(grep -c '^POST /api/v1/keys$' "$FIXTURES/requests.log" || true)"
+	post_count="$(grep -c '^POST /api/v1/keys$' "$REQUESTS_LOG" || true)"
 	[ "$post_count" -eq 2 ]
 }
 
@@ -432,7 +439,7 @@ JSON
 	echo "$output" | grep -q '"agent-not-yet"\|"name": "bond_nexus"'
 	echo "$output" | grep -q '"name": "dev_nexus"'
 	# Network untouched.
-	[ ! -s "$FIXTURES/requests.log" ]
+	[ ! -s "$REQUESTS_LOG" ]
 }
 
 # ── pure-function unit tests (no mock needed) ────────────────────

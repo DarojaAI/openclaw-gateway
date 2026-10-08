@@ -13,8 +13,9 @@
 # POST /auth/verify — plus an optional
 # "$FIXTURES_DIR/POST_verify.status" (single integer HTTP status).
 # The round-2 contract returns {"triple": {...}, "valid": bool, "exp": n}.
-# Every request is recorded into "$FIXTURES_DIR/requests.log"
-# (one line per request: METHOD PATH).
+# Every request is recorded into "$SCRIPT_DIR/requests.log"
+# (one line per request: METHOD PATH), the same location the python
+# impl writes (its __file__ dir == SCRIPT_DIR).
 #
 # Why a python server (not bash -c 'nc -l')
 # -----------------------------------------
@@ -28,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PORT="${MOCK_PORT:-${1:-18766}}"
 FIXTURES_DIR="$SCRIPT_DIR/fixtures"
-REQUESTS_LOG="$FIXTURES_DIR/requests.log"
+REQUESTS_LOG="$SCRIPT_DIR/requests.log"
 
 mkdir -p "$FIXTURES_DIR"
 : > "$REQUESTS_LOG"

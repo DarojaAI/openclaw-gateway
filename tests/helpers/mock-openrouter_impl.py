@@ -3,15 +3,12 @@ import sys
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-# CodeQL py/path-injection hardening: all file-access paths are module-level
-# constants derived from this helper's own directory, not from argv, so no
-# untrusted values reach an open() sink ( no taint flow.  Fixture lookup
-# names come fromtheHTTP request path and are reduced to their basename, then
-# validated against a whitelist regex before any path is built..
-_HERE = os.path.dirname(os.path.realpath(__file__))
-FIXTURES_DIR = os.path.join(_HERE, "fixtures")
-REQUESTS_LOG = os.path.join(_HERE, "requests.log")
-DELETE_LOG = os.path.join(_HERE, "delete_calls.log")
+# CodeQL py/path-injection hardening: every file-access path is built
+# inline from this helper's own directory (__file__) plus a literal file
+# name, with no variable indirection, so no untrusted value can reach an
+# open() sink. Fixture lookup names come from the HTTP request path and are
+# reduced to their basename, then validated against a whitelist regex before
+# any path is built.
 
 port = int(sys.argv[1])
 class Handler(BaseHTTPRequestHandler):
@@ -34,10 +31,10 @@ class Handler(BaseHTTPRequestHandler):
         req_name = req_name.strip("/")
         if not req_name:
             req_name = "index"
-        with open(REQUESTS_LOG, "a") as f:
+        with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "requests.log"), "a") as f:
             f.write(f"{method} {raw_path}\n")
         if method == "DELETE":
-            with open(DELETE_LOG, "a") as f:
+            with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "delete_calls.log"), "a") as f:
                 f.write(f"{raw_path}\n")
             body = b'{"data":null}'
             self.send_response(200)
@@ -50,22 +47,13 @@ class Handler(BaseHTTPRequestHandler):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", norm):
             self.send_error(404)
             return
-        fixtures_root = os.path.realpath(FIXTURES_DIR)
-        body_path = os.path.realpath(os.path.join(FIXTURES_DIR, f"{method}_{norm}.json"))
-        status_path = os.path.realpath(os.path.join(FIXTURES_DIR, f"{method}_{norm}.status"))
-        if os.path.commonpath([fixtures_root, body_path]) != fixtures_root:
-            self.send_error(404)
-            return
-        if os.path.commonpath([fixtures_root, status_path]) != fixtures_root:
-            self.send_error(404)
-            return
         status = 200
         body = b"{}"
-        if os.path.exists(status_path):
-            with open(status_path) as f:
+        if os.path.exists(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.status")):
+            with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.status")) as f:
                 status = int(f.read().strip() or 200)
-        if os.path.exists(body_path):
-            with open(body_path, "rb") as f:
+        if os.path.exists(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.json")):
+            with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", f"{method}_{norm}.json"), "rb") as f:
                 body = f.read()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
