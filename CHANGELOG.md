@@ -34,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `scripts/route-by-handle.py`: `route_by_handle()` return shape changed from `dict | None` to `tuple[str, dict] | None` so channel pinning has access to the full agent lockfile entry (allowed_channels, dry_run, enforce_channel_pinning). Output JSON unchanged when `--channel` is not supplied (back-compat).
+- `scripts/post-deploy-verify-memory-index.sh`: probe-user resolution falls back to the invoking context's config-file owner (`~/.openclaw/openclaw.json`) when the gateway is down, and refuses to probe as root when unresolvable (rc=2) rather than falsely failing the deploy gate on root's empty store (linux-desktop-seed run 37871548346, step 87). `MEMORY_CHECK_USER` is passed through by `scripts/install/deploy.sh` (default empty = the gate resolves the user itself).
+- `scripts/route-by-handle.py`: `route_by_handle()` return shape changed from `dict | None` to `tuple[str, dict] | None` so channel pinning has access to the full agent lockfile entry (allowed_channels, dry_run, enforce_channel_pinning. Output JSON unchanged when `--channel` is not supplied (back-compat.
 
 ### Exit codes (RFC #31 Phase 5, #47/#48)
 

@@ -108,13 +108,10 @@ STUB
 
 teardown() {
 	rm -rf "$TEST_BIN"
+	# Unset every env knob the script reads so tests are hermetic
+	# (the second (incomplete( teardown this replaces leaked MEMORY_CHECK_USER
+	# and GATEWAY_PROC_ROOT across tests when TEST_BIN was reused)。
 	unset FAKE_OPENCLAW_OUT SKIP_POST_DEPLOY_MEMORY_CHECK MEMORY_CHECK_FAIL_ON_FRESH MEMORY_CHECK_USER GATEWAY_PROC_ROOT
-}
-
-
-teardown() {
-	rm -rf "$TEST_BIN"
-	unset FAKE_OPENCLAW_OUT SKIP_POST_DEPLOY_MEMORY_CHECK MEMORY_CHECK_FAIL_ON_FRESH
 }
 
 # Convenience: write a canned agent list to FAKE_OPENCLAW_OUT.
@@ -337,4 +334,73 @@ emit() {
 # ---- 19. deploy.sh wires the new script in ----
 @test "deploy.sh invokes post-deploy-verify-memory-index.sh" {
 	grep -q "post-deploy-verify-memory-index.sh" "$REPO_ROOT/scripts/install/deploy.sh"
+}
+
+# ---- 23. Gateway down + config owned by a user → probe that user (root-invoked) ----
+# Regression for linux-desktop-seed run 37871548346 (step 87): during the
+# L3a drain-window lifecycle the gateway process is gone AND the deploy runs
+# as root; the root fallback probed root's own (empty) store and failed every
+# otherwise-green deploy. With no process to own the user, the config file's
+# owner is the deterministic signal — probe as that user, never root.
+#
+# Simulates a root-invoked deploy with `sudo -u root` (skips where sudo is
+# unavailable); GATEWAY_PROC_ROOT points at an empty dir (gateway down),
+# and $ROOT_HOME/.openclaw/openclaw.json is owned by the test user (the stand-in
+# for the gateway-owner). The fake runuser records that the probe ran as that user.
+@test "gateway-down root invocation probes the config file owner (never root)" {
+	if ! sudo -n true >/dev/null 2>&1; then
+		skip "sudo unavailable — cannot simulate a root-invoked deploy"
+	fi
+	expected_user="$(id -un)"
+	ROOT_HOME="$(mktemp -d)"
+	mkdir -p "$ROOT_HOME/.openclaw"
+	: >"$ROOT_HOME/.openclaw/openclaw.json"
+	# When the suite runs as root (this sandbox(,the test-created config
+	# would be root-owned and thus unprobeable — chown it to a non-root user
+	# to model the gateway owner. (On CI the test user is non-root already.)
+	if [[ "$expected_user" == "root" ]]; then
+		expected_user="desktopuser"
+		chown "$expected_user" "$ROOT_HOME/.openclaw/openclaw.json"
+	fi
+	# Fake runuser: record the probe user and cat the canned JSON (as in
+	# gateway_runs_as(; the real runuser would reset PATH and break the stub.
+
+	cat >"$TEST_BIN/runuser" <<'STUB'
+#!/usr/bin/env bash
+echo "runuser $*" >>"${TEST_BIN:-/tmp}/runuser.log"
+if [[ -f "${FAKE_OPENCLAW_OUT:-}" ]]; then cat "$FAKE_OPENCLAW_OUT"; else echo "[]"; fi
+STUB
+	chmod +x "$TEST_BIN/runuser"
+	emit '[{"agentId":"main","status":{"chunks":12,"files":3,"provider":"openai","requestedProvider":"openai","custom":{"indexIdentity":{"status":"ok","reason":""}}},"scan":{"totalFiles":3,"issues":[]}}]'
+	run sudo -n -u root env HOME="$ROOT_HOME" PATH="$TEST_BIN:$PATH" \
+		TEST_BIN="$TEST_BIN" FAKE_OPENCLAW_OUT="$FAKE_OPENCLAW_OUT" \
+		GATEWAY_PROC_ROOT="$ROOT_HOME/no-proc" bash "$SCRIPT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"gateway user '$expected_user'"* ]]
+	grep -q -- "-u $expected_user" "$TEST_BIN/runuser.log"
+}
+
+# ---- 24. Gateway down + no config + root invocation → fail-loud, never root ----
+# The config-owner branch cannot resolve; the invoker is root — the old fallback
+# would have probed root's own store. Deterministic chain now REFUSES (rc=2(,
+# никогда touching root's ~/.openclaw — and no runuser is ever attempted。
+@test "gateway-down root invocation without config refuses loudly (never root)" {
+	if ! sudo -n true >/dev/null 2>&1; then
+		skip "sudo unavailable — cannot simulate a root-invoked deploy"
+	fi
+	ROOT_HOME="$(mktemp -d)" # empty — no config tree
+	run sudo -n -u root env HOME="$ROOT_HOME" PATH="$TEST_BIN:$PATH" \
+		TEST_BIN="$TEST_BIN" FAKE_OPENCLAW_OUT="$FAKE_OPENCLAW_OUT" \
+		GATEWAY_PROC_ROOT="$ROOT_HOME/no-proc" bash "$SCRIPT"
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"Refusing"* ]]
+	[[ "$output" == *"root"* ]]
+	[[ ! -f "$TEST_BIN/runuser.log" ]]
+}
+
+# ---- 25. deploy.sh forwards MEMORY_CHECK_USER (gateway-down override) ----
+# The gate refuses to probe as root when unresolvable; deploy.sh must pass
+#the operator's MEMORY_CHECK_USER through (default empty = let the gate resolve)。
+@test "deploy.sh forwards MEMORY_CHECK_USER to the gate" {
+	grep -qF 'MEMORY_CHECK_USER="${MEMORY_CHECK_USER:-}"' "$REPO_ROOT/scripts/install/deploy.sh"
 }

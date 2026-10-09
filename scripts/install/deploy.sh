@@ -306,6 +306,12 @@ fi
 #   - Skipped when SKIP_POST_DEPLOY_MEMORY_CHECK=1.
 #   - Skipped when the verify script is not present (still
 #     soft-warns so the operator knows the gate is not running).
+#   - $MEMORY_CHECK_USER is honored: when set, the gate probes that
+#     user's store instead of auto-detecting the user. Pass it through
+#     here (default empty = the gate resolves the user itself — gateway
+#     process owner, config-file owner, or refusal when unresolvable).
+#     REQUIRED when the gateway is down (drain window)and the gate
+#     cannot resolve a non-root user — it then refuses to probe as root.
 memory_check="$REPO_ROOT/scripts/post-deploy-verify-memory-index.sh"
 if [[ "${SKIP_POST_DEPLOY_MEMORY_CHECK:-0}" == "1" ]]; then
     log_warn "Post-deploy memory-index check skipped (SKIP_POST_DEPLOY_MEMORY_CHECK=1)"
@@ -313,7 +319,7 @@ elif [[ -f "$memory_check" ]]; then
     # Capture rc explicitly; do not let `set -e` abort on exit 1 (the
     # script's documented "deploy gate fails" exit code).
     set +e
-    "$memory_check"
+    MEMORY_CHECK_USER="${MEMORY_CHECK_USER:-}" "$memory_check"
     rc=$?
     set -e
     if [[ $rc -eq 0 ]]; then
