@@ -46,8 +46,13 @@
 #   MEMORY_CHECK_USER                  probe as this user instead of
 #                                     auto-detecting the gateway service
 #                                     user (owner of the running
-#                                     openclaw.mjs process). Set when the
-#                                     gateway is down or for offline
+#                                     openclaw.mjs process). REQUIRED
+#                                     when the gateway is down and no
+#                                     non-root config-file owner can be
+#                                     resolved — the gate then REFUSES
+#                                     to probe as root (rc=2) rather
+#                                     than fail the deploy on root's
+#                                     empty store. Also useful for offline
 #                                     debugging of a specific user's store.
 #
 # Refs:
@@ -89,37 +94,83 @@ fi
 # Resolution order:
 #   1. $MEMORY_CHECK_USER  — explicit override (debug / offline deploys)
 #   2. owner of the running gateway process
-#   3. the invoking user (previous behavior; safe when the gateway is
-#      down or user detection is unavailable)
+#   3. owner of the invoking context's config file
+#      (~/.openclaw/openclaw.json, mapped uid -> user). The deploy
+#      pipeline writes the gateway config under the gateway user's home;
+#      a root-invoked deploy's own ~/.openclaw is empty, so this branch
+#      resolves to the gateway user only when a config file is actually
+#      owned by one.
+#   4. the invoking user IF NOT root (safe for manual non-root runs;
+#      root is never a valid probe user — root's own ~/.openclaw store is
+#      always the wrong store on the fleet host).
+#   5. FAIL-LOUD refusal (exit 2(: refuses to probe as root; the
+#      operator must set MEMORY_CHECK_USER (mirrors the sentinel
+#      cleanup's override behavior: the resolution never silently degrades
+#      to the wrong user's store).
 resolve_gateway_probe_user() {
 	if [[ -n "${MEMORY_CHECK_USER:-}" ]]; then
 		printf '%s\n' "$MEMORY_CHECK_USER"
 		return 0
 	fi
 	local proc_root="${GATEWAY_PROC_ROOT:-/proc}"
-	local pid cmd owner
+	local pid cmd owner invoker_candidate config_file config_uid config_user
 	# pgrep is only the broad candidate filter here — an anchored
 	# `pgrep -f '^openclaw-gateway$'` does not match reliably across
 	# launch contexts, and an unanchored one matches deploy.sh's own
 	# path under /opt/openclaw-gateway/ (and this gate's own script
 	# path). Read /proc/<pid>/cmdline and require an exact match:
-	#   - `openclaw-gateway` — the systemd user unit's process shape
-	#   - `*openclaw.mjs*gateway*` — the `node .../openclaw.mjs gateway`
+	#   - `openclaw-gateway` —the systemd user unit's process shape
+	#   - `*openclaw.mjs*gateway*` —the `node .../openclaw.mjs gateway`
 	#     launch shape
-	# Casual `openclaw` CLI invocations (memory index, doctor) and
+	# Casual `openclaw` CLI invocations (memory index, doctor)and
 	# deploy.sh itself match neither, so a root-run deploy pipeline
-	# still resolves to the unprivileged gateway owner.
+	# still resolves to the unprivileged gateway owner。 A process owned by
+	# root can never be the gateway (the unit runs as the unprivileged
+	# desktop user(, so skip those。
 	for pid in $(pgrep -f 'openclaw-gateway|openclaw\.mjs' 2>/dev/null || true); do
 		cmd="$(tr -d '[:space:]' <"$proc_root/$pid/cmdline" 2>/dev/null || true)"
 		if [[ "$cmd" == "openclaw-gateway" || "$cmd" == *openclaw.mjs*gateway* ]]; then
 			owner="$(stat -c %U "$proc_root/$pid" 2>/dev/null || true)"
-			if [[ -n "$owner" ]]; then
+			if [[ -n "$owner" ]] && [[ "$owner" != "root" ]]; then
 				printf '%s\n' "$owner"
 				return 0
 			fi
 		fi
 	done
-	printf '%s\n' "$(id -un 2>/dev/null || echo root)"
+	# Gateway is down (guaranteed during the L3a drain-window lifecycle(
+	# and no process owner exists. Resolve from the config file the deploying
+	# context owns: when the deploy pipeline (as root( ran over ssh, its
+	# own ~/.openclaw is empty; the file under the gateway user's home
+	# exists only if this context is that user's — probe as its owner.
+	config_file="${HOME}/.openclaw/openclaw.json"
+	if [[ -f "$config_file" ]]; then
+		config_uid="$(stat -c %u "$config_file" 2>/dev/null || true)"
+		if [[ "$config_uid" =~ ^[0-9]+$ ]]; then
+			config_user="$(id -un "$config_uid" 2>/dev/null || true)"
+			if [[ -n "$config_user" ]] && [[ "$config_user" != "root" ]]; then
+				printf '%s\n' "$config_user"
+				return 0
+			fi
+		fi
+	fi
+	# Nothing left to resolve deterministically. A non-root invoker
+	# (manual debug run as the gateway user( keeps the previous safe
+	# fallback. A root-invoked deploy must NEVER fall back to root:
+	# probing root's own store failed every otherwise-green deploy during
+	# the drain window (linux-desktop-seed run 37871548346, step 87).
+	# Refuse loudly and require the explicit override instead.
+	invoker_candidate="$(id -un 2>/dev/null || echo root)"
+	if [[ "$invoker_candidate" != "root" ]]; then
+		printf '%s\n' "$invoker_candidate"
+		return 0
+	fi
+	log "ERROR: cannot resolve the gateway user to probe: the gateway is down,"
+	log "  MEMORY_CHECK_USER is unset, and no usable config is at $config_file"
+	log "  (missing or owned by root).. Refusing to probe the memory index as root —"
+	log "  root's ~/.openclaw store is never the gateway's. Set MEMORY_CHECK_USER"
+	log "  (e.g. MEMORY_CHECK_USER=desktopuser) to probe a specific user's store,"
+	log "  or export it from the deploy pipeline."
+	return 2
 }
 
 # `openclaw memory status --json` returns a JSON array; one element per
@@ -127,7 +178,14 @@ resolve_gateway_probe_user() {
 # invoking user, run the probe as the probe user (runuser sets HOME to
 # the target user; XDG_RUNTIME_DIR lets the CLI reach the user bus for
 # secret resolution).
-probe_user="$(resolve_gateway_probe_user)"
+probe_rc=0
+# resolve_gateway_probe_user exits 2 (after logging the refusal( when
+# it cannot resolve a non-root probe user from a root-invoked deploy；
+# match that exit code (probe failure) without letting `set -e` abort。
+probe_user="$(resolve_gateway_probe_user)" || probe_rc=$? || true
+if [[ "$probe_rc" -ne 0 ]]; then
+	exit 2
+fi
 invoker="$(id -un 2>/dev/null || echo root)"
 probe_prefix=()
 if [[ "$invoker" != "$probe_user" ]] && command -v runuser >/dev/null 2>&1; then
