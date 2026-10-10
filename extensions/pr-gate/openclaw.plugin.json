@@ -1,0 +1,17 @@
+{
+  "id": "daroja-pr-gate",
+  "name": "DarojaAI PR-Closeout Gate",
+  "version": "2026.8.1",
+  "description": "Implements RFC DarojaAI/.github#33 pre-send gate as a vendor overlay. Rejects outbound message(send) green-claim phrases when gh pr checks has not been observed for the referenced PR.",
+  "author": "Milan Patel (no_decaf_milan)",
+  "license": "Apache-2.0",
+  "runtime": {
+    "minOpenclawVersion": ">=2026.8.1",
+    "hookApi": "registerMessageSendingGate"
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

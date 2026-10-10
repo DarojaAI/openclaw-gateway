@@ -1,0 +1,9 @@
+{
+  "name": "@daroja/pr-gate-extension-vendor",
+  "version": "2026.8.1",
+  "description": "DarojaAI PR-closeout gate vendor overlay — RFC DarojaAI/.github#33.",
+  "type": "module",
+  "private": true,
+  "main": "index.ts",
+  "license": "Apache-2.0"
+}
