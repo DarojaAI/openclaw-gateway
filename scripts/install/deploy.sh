@@ -358,7 +358,7 @@ fi
 if [[ "${OPENCLAW_PLUGIN_CAPTURES_RETENTION:-0}" == "1" ]]; then
     prune_script="$REPO_ROOT/scripts/lib-prune-retention.py"
     if [[ -f "$prune_script" ]]; then
-        prune_args=(--dir "${HOME:?HOME must be set}/.openclaw/tmp/plugin-captures")
+        prune_args=(--dir "${HOME:?HOME must be set}/.openclaw/tmp/plugin-captures" --capture-aware)
         if [[ "${OPENCLAW_PLUGIN_CAPTURES_RETENTION_DELETE:-0}" == "1" ]]; then
             prune_args+=(--delete)
             log_info "plugin-captures retention prune enabled (DELETE mode)"

@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/tools/acp-agents.md`: multi-agent ACP runtime binding reference (entry shape, ACP mode enum, per-agent OpenRouter auth-profiles sync, Discord channel env-var flow).
 - `docs/architecture.md`: per-agent ACP runtime bindings section — documents the per-agent OpenRouter key mechanism actually implemented in `scripts/openrouter-provision.py` (auth-profiles sync; master key never wired into sessions; file/line references) and the Discord channel env-var flow.
 
+### Fixed
+
+- `scripts/lib-prune-retention.py`: retention prune can no longer delete files (including companion files such as `README.md`/`LICENSE.md`) out of plugin-captures trees that are still referenced by installed plugins (issue #141). Capture-instance directories are treated as atomic units: a tree carrying a live `owner.sqlite` lease, an ambiguous/unreadable lease, a non-empty installed-plugin registry, or an unreadable registry is skipped with an explicit warning and counted as retained bytes; only a token-less tree with a registry proving zero installed plugins may be pruned (whole tree only, re-checked immediately before delete). Protection is passed by the deploy-step and timer invocations (`--capture-aware`) and also auto-enables when the target dir contains capture instances. The official repair for a prune-damaged capture is documented: `openclaw doctor` re-captures plugin trees (registry refresh does not).
+
 ### Changed
 
 - `scripts/post-deploy-verify-memory-index.sh`: probe-user resolution falls back to the invoking context's config-file owner (`~/.openclaw/openclaw.json`) when the gateway is down, and refuses to probe as root when unresolvable (rc=2) rather than falsely failing the deploy gate on root's empty store (linux-desktop-seed run 37871548346, step 87). `MEMORY_CHECK_USER` is passed through by `scripts/install/deploy.sh` (default empty = the gate resolves the user itself).
