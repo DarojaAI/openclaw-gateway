@@ -1,0 +1,89 @@
+From a056c192bc8c1ea74d326760e6f38116c6509dc5 Mon Sep 17 00:00:00 2001
+From: Milan Patel <patelmm79@gmail.com>
+Date: Fri, 21 Aug 2026 17:17:08 -0400
+Subject: [PATCH] feat(outbound): wire message-sending gate into
+ executeSendAction (#2)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+* feat(hooks): message:sending pre-send gate API
+
+Adds a synchronous-blocking pre-send gate event so consumers (the
+pr-gate workspace plugin and any other rule enforcement) can intercept
+outbound message(send) calls before delivery.
+
+- InternalHookEventKey: add "message:sending".
+- MessageSendingGateContext, Handler, Decision types.
+- registerMessageSendingGate / unregisterMessageSendingGate /
+  clearMessageSendingGates / getMessageSendingGateHandlerCount.
+- gateMessageSending — runs handlers in registration order, first
+  blocking decision short-circuits.
+- MessageBlockedError — typed error surfaces the gate reason to
+  the agent harness.
+
+Default-allow when no handlers are registered. Handler errors are
+logged and do not block the send.
+
+Part of RFC #33 (DarojaAI/.github#33): rule text + tool-hook
+specification across darojaai_architect#41, daroja-coding-agent#20,
+dev-nexus#1410 already merged. This commit is the API surface;
+follow-up commits wire the gate into the outbound send site and
+ship the pr-gate workspace plugin.
+
+* feat(outbound): wire message-sending gate into executeSendAction
+
+Calls `gateMessageSending` at the top of `executeSendAction` before
+plugin dispatch and core delivery. If any handler returns
+`allow: false`, throws `MessageBlockedError` so the agent harness
+surfaces the reason to the model rather than silently dropping the
+message.
+
+Default-allow when no handlers are registered; the gate is opt-in.
+A handler error logs and continues; only an explicit block decision
+blocks.
+
+Part of RFC DarojaAI/.github#33 (DarojaAI/openclaw#1 lands the API).
+
+---------
+
+Co-authored-by: darojaai_architect <darojaai_architect@users.noreply.github.com>
+---
+ src/infra/outbound/outbound-send-service.ts | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src/infra/outbound/outbound-send-service.ts b/src/infra/outbound/outbound-send-service.ts
+index cd7c3d52254dd..65d22cbdf8592 100644
+--- a/src/infra/outbound/outbound-send-service.ts
++++ b/src/infra/outbound/outbound-send-service.ts
+@@ -17,6 +17,7 @@ import type {
+ import { appendAssistantMessageToSessionTranscript } from "../../config/sessions.js";
+ import { getOwnedSessionTranscriptWriterFence } from "../../config/sessions/transcript-write-context.js";
+ import type { OpenClawConfig } from "../../config/types.openclaw.js";
++import { gateMessageSending, MessageBlockedError } from "../../hooks/internal-hooks.js";
+ import {
+   normalizeMessagePresentation,
+   renderMessagePresentationFallbackText,
+@@ -342,6 +343,22 @@ export async function executeSendAction(params: {
+   toolResult?: AgentToolResult<unknown>;
+   sendResult?: MessageSendResult;
+ }> {
++  // Pre-send gate: handlers can block with allow=false. Default-allow when
++  // no handlers are registered. Throws MessageBlockedError if any handler
++  // returns allow=false; the agent harness surfaces the reason to the model.
++  const gateDecision = await gateMessageSending({
++    to: params.to,
++    content: params.message,
++    channelId: params.ctx.channel ?? "",
++    accountId: params.ctx.accountId ?? undefined,
++    metadata: {
++      sessionKey: params.ctx.sessionKey,
++      toolContext: params.ctx.toolContext,
++    },
++  });
++  if (gateDecision.allow === false) {
++    throw new MessageBlockedError(gateDecision.reason, gateDecision.code);
++  }
+   throwIfAborted(params.ctx.abortSignal);
+   const defaultPayload: ReplyPayload = params.payload ?? {
+     text: params.message,

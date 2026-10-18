@@ -1,0 +1,300 @@
+From 92270bf81e3a3a1f420fe383a2eb3d2cada412b6 Mon Sep 17 00:00:00 2001
+From: Milan Patel <patelmm79@gmail.com>
+Date: Sat, 17 Oct 2026 20:38:13 -0400
+Subject: [PATCH] fix(doctor): stop re-snapshotting already-migrated auth
+ sources (#9)
+
+Repeated doctor invocations on an already-migrated legacy auth source
+(auth-profiles.json, auth-state.json, auth.json, shared oauth.json) minted a
+fresh timestamped .migrated-* archive every run, so prod accumulated ~2.5
+snapshots per agent.
+
+When a terminal migration receipt already owns the exact source bytes and its
+archive still exists, doctor now removes the reappeared identical source
+without creating a new snapshot; only content that actually changed is
+archived again. If the terminal archive is missing, doctor still re-archives
+to preserve the bytes.
+
+Fixes #132
+
+Co-authored-by: Migration Agent <agent@daroja.ai>
+---
+ CHANGELOG.md                                  |   1 +
+ .../doctor-auth-flat-profiles.test.ts         | 117 +++++++++++++++++-
+ src/commands/doctor-auth-flat-profiles.ts     |  21 +++-
+ .../doctor-auth-migration-receipts.test.ts    |  18 +++
+ .../doctor-auth-migration-receipts.ts         |  19 ++-
+ 5 files changed, 166 insertions(+), 10 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 8872f5870e7c2..99687e6450555 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,7 @@ Docs: https://docs.openclaw.ai
+ 
+ ### Changes
+ 
++- **Doctor auth migration:** stop re-snapshotting already-migrated legacy auth sources (`auth-profiles.json`, `auth-state.json`, `auth.json`, shared `oauth.json`) on every invocation; reappeared identical sources are removed without creating a new `.migrated-*` archive, and only content that actually changed is snapshotted again. Fixes #132.
+ - **Release validation:** defer beta candidate Parallels smoke to postpublish `release:beta-smoke` by default, keep stable/full prepublish coverage, and bound nested release workflow monitors with explicit job timeouts.
+ - **macOS app profiles:** isolate named app instances across state, preferences, Keychain, Gateway services, and duplicate-instance ownership while keeping host-global login and node services untouched.
+ - **Developer workflow:** remove the obsolete scoped-commit helper and use standard Git commands in isolated worktrees.
+diff --git a/src/commands/doctor-auth-flat-profiles.test.ts b/src/commands/doctor-auth-flat-profiles.test.ts
+index a34958ce2783c..151f137df86ff 100644
+--- a/src/commands/doctor-auth-flat-profiles.test.ts
++++ b/src/commands/doctor-auth-flat-profiles.test.ts
+@@ -351,7 +351,7 @@ describe("maybeMigrateAuthProfileJsonStoresToSqlite", () => {
+     expect(loadPersistedAuthProfileStore(state.agentDir())).toBeNull();
+   });
+ 
+-  it("archives restored OAuth bytes without replaying a terminal receipt", async () => {
++  it("cleans up restored OAuth bytes without re-archiving a terminal receipt", async () => {
+     const state = await makeTestState();
+     const oauthPath = await state.writeJson("credentials/oauth.json", {
+       openai: {
+@@ -378,10 +378,121 @@ describe("maybeMigrateAuthProfileJsonStoresToSqlite", () => {
+       env: state.env,
+     });
+ 
+-    expect(replay.changes).toEqual([expect.stringContaining("without replaying credentials")]);
++    expect(replay.changes).toEqual([expect.stringContaining("without a new snapshot")]);
+     expect(loadPersistedAuthProfileStore(state.agentDir())?.profiles).toEqual({});
+     expect(fs.existsSync(oauthPath)).toBe(false);
+-    expect(listMigratedArchives(oauthPath)).toHaveLength(2);
++    expect(listMigratedArchives(oauthPath)).toHaveLength(1);
++  });
++
++  it("does not re-snapshot a reappeared already-migrated auth-profiles.json", async () => {
++    const state = await makeTestState();
++    const authPath = await writeLegacyAuthProfilesJson(state, {
++      version: 1,
++      profiles: {
++        "openai:default": { type: "api_key", provider: "openai", key: "not-a-real" },
++      },
++    });
++    const sourceBytes = fs.readFileSync(authPath);
++
++    await maybeMigrateAuthProfileJsonStoresToSqlite({
++      cfg: {},
++      prompter: makePrompter(true),
++      env: state.env,
++    });
++    fs.writeFileSync(authPath, sourceBytes);
++
++    const replay = await maybeMigrateAuthProfileJsonStoresToSqlite({
++      cfg: {},
++      prompter: makePrompter(true),
++      env: state.env,
++    });
++
++    expect(replay.changes).toEqual([expect.stringContaining("without a new snapshot")]);
++    expect(
++      loadPersistedAuthProfileStore(state.agentDir())?.profiles["openai:default"],
++    ).toMatchObject({ type: "api_key", provider: "openai" });
++    expect(fs.existsSync(authPath)).toBe(false);
++    expect(listMigratedArchives(authPath)).toHaveLength(1);
++  });
++
++  it("snapshots an already-migrated auth source again when its bytes changed", async () => {
++    const state = await makeTestState();
++    const authPath = await writeLegacyAuthProfilesJson(state, {
++      version: 1,
++      profiles: {
++        "openai:default": { type: "api_key", provider: "openai", key: "first-key" },
++      },
++    });
++    await maybeMigrateAuthProfileJsonStoresToSqlite({
++      cfg: {},
++      prompter: makePrompter(true),
++      env: state.env,
++    });
++    const mutated = `${JSON.stringify(
++      {
++        version: 1,
++        profiles: {
++          "openai:default": { type: "api_key", provider: "openai", key: "first-key" },
++          "anthropic:default": { type: "api_key", provider: "anthropic", key: "claude-key" },
++        },
++      },
++      null,
++      2,
++    )}\n`;
++    fs.writeFileSync(authPath, mutated, "utf8");
++
++    const replay = await maybeMigrateAuthProfileJsonStoresToSqlite({
++      cfg: {},
++      prompter: makePrompter(true),
++      env: state.env,
++    });
++
++    // Mutated bytes have no terminal receipt, so Doctor snapshots them again
++    // and imports the newly added profile without clobbering existing ones.
++    expect(replay.changes).toEqual([expect.stringContaining("Migrated auth profile JSON for")]);
++    expect(loadPersistedAuthProfileStore(state.agentDir())?.profiles).toMatchObject({
++      "openai:default": { key: "first-key" },
++      "anthropic:default": { key: "claude-key" },
++    });
++    expect(fs.existsSync(authPath)).toBe(false);
++    const archives = listMigratedArchives(authPath);
++    expect(archives).toHaveLength(2);
++    expect(
++      archives.some((archive) => fs.readFileSync(archive).equals(Buffer.from(mutated, "utf8"))),
++    ).toBe(true);
++  });
++
++  it("re-archives an already-migrated auth source when its terminal archive is missing", async () => {
++    const state = await makeTestState();
++    const authPath = await writeLegacyAuthProfilesJson(state, {
++      version: 1,
++      profiles: {
++        "openai:default": { type: "api_key", provider: "openai", key: "not-a-real" },
++      },
++    });
++    const sourceBytes = fs.readFileSync(authPath);
++
++    await maybeMigrateAuthProfileJsonStoresToSqlite({
++      cfg: {},
++      prompter: makePrompter(true),
++      env: state.env,
++    });
++    const [archive] = listMigratedArchives(authPath);
++    fs.rmSync(archive!);
++    fs.writeFileSync(authPath, sourceBytes);
++
++    const replay = await maybeMigrateAuthProfileJsonStoresToSqlite({
++      cfg: {},
++      prompter: makePrompter(true),
++      env: state.env,
++    });
++
++    expect(replay.changes).toEqual([
++      expect.stringContaining("Archived a previously migrated legacy auth source"),
++    ]);
++    expect(fs.existsSync(authPath)).toBe(false);
++    expect(listMigratedArchives(authPath)).toHaveLength(1);
++    expect(fs.readFileSync(listMigratedArchives(authPath)[0]!)).toEqual(sourceBytes);
+   });
+ 
+   it("marks a partially parsed shared OAuth source for manual recovery", async () => {
+diff --git a/src/commands/doctor-auth-flat-profiles.ts b/src/commands/doctor-auth-flat-profiles.ts
+index 4eb073a808d7d..ae75f7d200732 100644
+--- a/src/commands/doctor-auth-flat-profiles.ts
++++ b/src/commands/doctor-auth-flat-profiles.ts
+@@ -63,7 +63,7 @@ import {
+   createAuthProfileMigrationSourceReceipt,
+   digestAuthProfileMigrationValue,
+   finalizeAuthProfileMigrationSource,
+-  hasTerminalAuthProfileMigrationReceipt,
++  findTerminalAuthProfileMigrationReceipt,
+   resumePendingAuthProfileMigrationArchives,
+   type AuthProfileMigrationSourceReceipt,
+ } from "./doctor-auth-migration-receipts.js";
+@@ -792,9 +792,26 @@ function archivePreviouslyMigratedAuthProfileSource(
+   receipt: AuthProfileMigrationSourceReceipt,
+   result: LegacyFlatAuthProfileRepairResult,
+ ): boolean {
+-  if (!hasTerminalAuthProfileMigrationReceipt(receipt.sourceKey, receipt.env)) {
++  const terminal = findTerminalAuthProfileMigrationReceipt(receipt.sourceKey, receipt.env);
++  if (!terminal) {
+     return false;
+   }
++  // The exact source bytes already ended in a terminal archive; a reappeared
++  // identical copy must not mint another timestamped snapshot on every pass.
++  // Remove it only when its legacy archive still preserves the verified bytes.
++  if (fs.existsSync(terminal.archivePath)) {
++    const currentSha256 = createHash("sha256")
++      .update(fs.readFileSync(receipt.sourcePath))
++      .digest("hex");
++    if (currentSha256 !== receipt.sourceSha256) {
++      throw new Error("legacy auth source changed after verification");
++    }
++    fs.rmSync(receipt.sourcePath);
++    result.changes.push(
++      `Removed a reappeared already-migrated legacy auth source without a new snapshot (bytes already archived at ${shortenHomePath(terminal.archivePath)}).`,
++    );
++    return true;
++  }
+   archiveAuthProfileMigrationSource(receipt);
+   result.changes.push(
+     `Archived a previously migrated legacy auth source without replaying credentials (${shortenHomePath(receipt.archivePath)}).`,
+diff --git a/src/commands/doctor-auth-migration-receipts.test.ts b/src/commands/doctor-auth-migration-receipts.test.ts
+index 6366725661e3d..39032e27620aa 100644
+--- a/src/commands/doctor-auth-migration-receipts.test.ts
++++ b/src/commands/doctor-auth-migration-receipts.test.ts
+@@ -14,6 +14,7 @@ import {
+   archiveAuthProfileMigrationSource,
+   createAuthProfileMigrationSourceReceipt,
+   digestAuthProfileMigrationValue,
++  findTerminalAuthProfileMigrationReceipt,
+   resumePendingAuthProfileMigrationArchives,
+ } from "./doctor-auth-migration-receipts.js";
+ 
+@@ -69,6 +70,23 @@ describe("auth profile migration receipts", () => {
+     return { state, sourcePath, receipt };
+   }
+ 
++  it("returns the recorded terminal archive path only after completion", async () => {
++    const { state, sourcePath, receipt } = await makeReceipt();
++
++    expect(findTerminalAuthProfileMigrationReceipt(receipt.sourceKey, state.env)).toBeNull();
++
++    recordAuthProfileMigrationImported(receipt);
++    expect(findTerminalAuthProfileMigrationReceipt(receipt.sourceKey, state.env)).toBeNull();
++
++    archiveAuthProfileMigrationSource(receipt);
++    recordAuthProfileMigrationCompleted(receipt);
++    expect(fs.existsSync(sourcePath)).toBe(false);
++
++    expect(findTerminalAuthProfileMigrationReceipt(receipt.sourceKey, state.env)).toEqual({
++      archivePath: receipt.archivePath,
++    });
++  });
++
+   it("resumes after target commit and receipt but before archive", async () => {
+     const { state, sourcePath, receipt } = await makeReceipt();
+     recordAuthProfileMigrationImported(receipt);
+diff --git a/src/commands/doctor-auth-migration-receipts.ts b/src/commands/doctor-auth-migration-receipts.ts
+index 2b6b1f24154da..0d3f8b32be5a4 100644
+--- a/src/commands/doctor-auth-migration-receipts.ts
++++ b/src/commands/doctor-auth-migration-receipts.ts
+@@ -1,7 +1,10 @@
+ import { createHash, randomUUID } from "node:crypto";
+ import fs from "node:fs";
+ import path from "node:path";
+-import { isStringRecord as isRecordOfStrings } from "@openclaw/normalization-core/record-coerce";
++import {
++  isRecord,
++  isStringRecord as isRecordOfStrings,
++} from "@openclaw/normalization-core/record-coerce";
+ import { acquireFileLockSyncWithRetry } from "../infra/file-lock-sync.js";
+ import {
+   executeSqliteQuerySync,
+@@ -430,19 +433,25 @@ export function resumePendingAuthProfileMigrationArchives(env?: NodeJS.ProcessEn
+   return changes;
+ }
+ 
+-export function hasTerminalAuthProfileMigrationReceipt(
++export function findTerminalAuthProfileMigrationReceipt(
+   sourceKey: string,
+   env?: NodeJS.ProcessEnv,
+-): boolean {
++): { archivePath: string } | null {
+   const database = openOpenClawStateDatabase({ env });
+   const row = executeSqliteQueryTakeFirstSync(
+     database.db,
+     getNodeSqliteKysely<MigrationDatabase>(database.db)
+       .selectFrom("migration_sources")
+-      .select("status")
++      .select(["status", "report_json"])
+       .where("source_key", "=", sourceKey),
+   );
+-  return row?.status === "completed" || row?.status === "archived-unparsed";
++  if (row?.status !== "completed" && row?.status !== "archived-unparsed") {
++    return null;
++  }
++  const report = typeof row.report_json === "string" ? JSON.parse(row.report_json) : null;
++  return isRecord(report) && typeof report.archivePath === "string"
++    ? { archivePath: report.archivePath }
++    : null;
+ }
+ 
+ if (process.env.VITEST || process.env.NODE_ENV === "test") {
