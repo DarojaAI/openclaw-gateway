@@ -1,0 +1,107 @@
+---
+name: Upstream Watch
+
+# Hourly watch on the openclaw/openclaw fork-drain queue (gateway#157).
+#
+# GATEWAY-NATIVE COMMENT TWIN of seed PR #2384. The seed repo
+# (linux-desktop-seed) runs its own upstream-watch (#2384) whose GITHUB_TOKEN
+# is scoped to the seed repo and therefore CANNOT write a cross-repo comment
+# on DarojaAI/openclaw-gateway#157. THIS workflow runs inside the gateway repo
+# (openclaw-gateway), so its repo-scoped GITHUB_TOKEN CAN comment directly on
+# gateway#157 -- dissolving the cross-repo PAT limitation documented in the
+# seed PR. The seed's watcher remains for seed-side tracking; this twin posts
+# the native comments here.
+#
+# Monitors the data-driven item list in config/upstream-watch-items.json for
+# the transitions that unblock or move the fork-fix drain: PR CI flips to
+# success / approvals / merge / close-without-merge, issue state changes,
+# new maintainer/codex comments, new linked PRs, the #176080 unblock label
+# removal, and new upstream releases. On any change it posts one concise
+# comment to gateway#157 (reused explicitly via NOTIFY_ISSUE) and fails loud
+# (::error::) if a gh query errors -- never a silent green.
+#
+# Notification destination: gateway#157 (the tracking issue). NOTIFY_ISSUE is
+# pinned to 157 so the comment lands on the existing rollout-checklist issue;
+# the repo-scoped GITHUB_TOKEN is enough because the issue lives in THIS repo.
+#
+# The deduction/decision logic lives in scripts/ci/upstream-watch.sh
+# (function-based, BATS-tested: ci_summary, normalize_*, sig_diff, unblocked).
+# This file only gathers the item set + state, runs the script, and persists
+# state via the actions cache (a small committed state file would churn the
+# repo every hour; cache is the branch-divergence-sibling convention).
+
+'on':
+  schedule:
+    # Hourly, at :41 -- the :41 removes us from the top-of-hour GitHub
+    # Actions cron thundering-herd on the shared runner pool.
+    - cron: '41 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report changes without posting a comment (no state mutation).'
+        required: false  # yamllint disable-line rule:truthy
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  upstream-watch:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore last-seen state (actions cache, prefix match)
+        # actions/cache does NOT overwrite an existing key, so restore and
+        # save must use a run-scoped save key and restore by prefix: we
+        # restore the newest upstream-watch-state-<run> from a prior run and
+        # save under THIS run's id. Without this split a stable key would
+        # restore but then never persist the freshly-updated state (the save
+        # would be a same-key no-op). On a miss the script treats the first
+        # observation as a baseline and stays silent.
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/upstream-watch-state.json
+          key: upstream-watch-state-${{ github.run_id }}
+          restore-keys: upstream-watch-state-
+
+      - name: Run upstream-watch check
+        id: watch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_REPO: openclaw/openclaw
+          UPSTREAM_ANCHOR: 607aabf8041
+          ITEMS_FILE: config/upstream-watch-items.json
+          STATE_FILE: ${{ runner.temp }}/upstream-watch-state.json
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          NOTIFY_REPO: ${{ github.repository }}
+          NOTIFY_ISSUE: '157'
+          NOTIFY_LABEL: upstream-watch
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          scripts/ci/upstream-watch.sh
+
+      - name: Save state for next run
+        # A dry_run never advances the baseline: the script skips its state
+        # writes under DRY_RUN, and we skip the cache save here too.
+        # actions/cache/save is a no-op when the path is absent (first run
+        # before any state file) -- expected on run 1.
+        if: github.event.inputs.dry_run != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/upstream-watch-state.json
+          key: upstream-watch-state-${{ github.run_id }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Upstream-watch run finished. See step summary for the full table."
