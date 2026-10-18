@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `config/openclaw-defaults.json`: top-level `bindings` array with Discord route entries for the three ACP agents, channel id as the `__OPENCLAW_DISCORD_CHANNEL_ID__` env placeholder (no hardcoded snowflakes; per-env value injected at deploy).
 - `docs/tools/acp-agents.md`: multi-agent ACP runtime binding reference (entry shape, ACP mode enum, per-agent OpenRouter auth-profiles sync, Discord channel env-var flow).
 - `docs/architecture.md`: per-agent ACP runtime bindings section — documents the per-agent OpenRouter key mechanism actually implemented in `scripts/openrouter-provision.py` (auth-profiles sync; master key never wired into sessions; file/line references) and the Discord channel env-var flow.
+- `docs/upstream-staging/ARCHIVE-RUNBOOK.md`: fork-retirement actuation runbook — evidence-backed pre-checks, exact archive steps (CLI + UI), post-archive verification (PR-head readability, `resolve-openclaw-pin.sh`, plan-only test dispatch), and the one-click unarchive-recovery path. Complements the `docs/upstream-staging/README.md` patch ledger (PR #156).
 
 ### Fixed
 
