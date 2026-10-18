@@ -106,7 +106,7 @@ Documentation=https://github.com/DarojaAI/openclaw-gateway
 [Service]
 Type=oneshot
 EnvironmentFile=%h/.openclaw/plugin-captures-retention.env
-ExecStart=/bin/sh -c 'exec %h/.local/bin/openclaw-plugin-captures-prune --dir %h/.openclaw/tmp/plugin-captures --max-age-days "\$PRUNE_MAX_AGE_DAYS" --max-bytes "\$PRUNE_MAX_BYTES" --delete'
+ExecStart=/bin/sh -c 'exec %h/.local/bin/openclaw-plugin-captures-prune --dir %h/.openclaw/tmp/plugin-captures --max-age-days "\$PRUNE_MAX_AGE_DAYS" --max-bytes "\$PRUNE_MAX_BYTES" --capture-aware --delete'
 StandardOutput=append:%h/.local/log/openclaw-plugin-captures/prune.log
 StandardError=append:%h/.local/log/openclaw-plugin-captures/prune.log
 EOF

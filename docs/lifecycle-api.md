@@ -77,7 +77,58 @@ any target dir) under two knobs — `--max-age-days` (default 14 days) and
 `--max-bytes` (default 20 GiB; K/M/G/T suffixes ok; 0 = no cap) —
 deleting oldest-first when either is exceeded. Dry-run is the default; real
 deletion requires `--delete`. CLI flags override the `PRUNE_DIR`,
-`PRUNE_MAX_AGE_DAYS`, `PRUNE_MAX_BYTES` env vars.
+`PRUNE_MAX_AGE_DAYS`, `PRUNE_MAX_BYTES` env vars (the timer's knobs live in
+`~/.openclaw/plugin-captures-retention.env`).
+
+### Capture-tree safety ([#141](https://github.com/DarojaAI/openclaw-gateway/issues/141))
+
+The upstream runtime stages one capture tree per plugin-admission event under
+`<stateDir>/tmp/plugin-captures/<instanceId>/` — package copies in a
+`captures/` child, with an `owner.sqlite` custody/lease token at the instance
+root. Plugin load admission compares hashes against the bytes captured at
+admission time, so deleting **any** file out of a still-referenced capture
+tree (including companion files such as `README.md` / `LICENSE.md`) breaks
+the next plugin load. The pruner therefore never deletes inside a
+still-referenced capture tree:
+
+- Capture-instance directories are treated as **atomic units** — a tree is
+  either kept whole or pruned whole, never file-by-file.
+- A tree carrying a **live lease** (`owner.sqlite` or its
+  `-journal`/`-wal`/`-shm` sidecars, symlinked or unreadable tokens
+  included) is **referenced** → skipped with a warning.
+- A **token-less** tree is still referenced while the installed-plugin
+  registry (the runtime's `installed_plugin_index` in
+  `<stateDir>/state/openclaw-state.sqlite`, falling back to legacy
+  `<stateDir>/plugins/installs.json`) is non-empty — skipping with a warning
+  — or when the registry cannot be read (fail-loud; never delete anything we
+  cannot prove unreferenced).
+- Only a token-less tree with a registry proving **zero installed plugins**
+  may be pruned, and then only as a whole tree.
+- The reference check runs again immediately before each delete, so a tree
+  claimed by the runtime between planning and deletion is left alone.
+
+Every skipped tree is reported on its own line
+(`skipped (referenced capture): <dir> (<reason>)`) and counted in the
+summary as retained bytes — both in dry-run and delete mode. Deploy-step and
+timer invocations pass `--capture-aware`; protection also enables itself
+automatically whenever the target dir contains capture instances, so older
+timer installs are safe without reinstall. `--no-capture-aware` restores the
+old generic behavior explicitly.
+
+### Repairing a prune-damaged capture (official path)
+
+If a capture tree was damaged (or files were hand-restored), restoring the
+bytes is not enough — admission compares hashes of the bytes at capture time.
+The sanctioned repair is to **re-capture the plugin trees**:
+
+```bash
+openclaw doctor          # the doctor plugin phase re-captures plugin trees
+```
+
+`openclaw plugins registry --refresh` refreshes registry metadata only and
+does **not** re-capture plugin trees; it cannot repair a pruned capture.
+After `openclaw doctor` completes, restart the gateway so admission sees the
+fresh captures.
 
 **Concurrent pruners:** the pruner takes an exclusive `flock` on
 `<target>/.prune-retention.lock` for its whole scan+delete cycle.
@@ -89,7 +140,7 @@ retention policies.
 Manual purge policy (run by hand when the dir is overflowing):
 
 ```bash
-# Preview what the policy would delete
+# Preview what the policy would delete (capture-aware)
 python3 scripts/lib-prune-retention.py --dir ~/.openclaw/tmp/plugin-captures
 
 # Apply the same policy
