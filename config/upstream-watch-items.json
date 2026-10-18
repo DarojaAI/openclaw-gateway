@@ -1,0 +1,42 @@
+{
+  "upstream_repo": "openclaw/openclaw",
+  "anchor_commit": "607aabf8041",
+  "notify_issue_title": "Upstream watch: openclaw fork-drain queue",
+  "notify_issue_label": "upstream-watch",
+  "items": [
+    {
+      "kind": "pr",
+      "number": 176078,
+      "name": "feat(sessions): transcript archive retention config + post-archive vacuum pass"
+    },
+    {
+      "kind": "pr",
+      "number": 176299,
+      "name": "feat(channels): before_route_inbound_message preflight hook"
+    },
+    {
+      "kind": "issue",
+      "number": 176062,
+      "name": "doctor: reappeared identical auth profile sources are re-archived on every run (unbounded .migrated-* litter)"
+    },
+    {
+      "kind": "issue",
+      "number": 176300,
+      "name": "gateway: mixed-version CLI/SDK writers during version churn can corrupt the state DB (torn WAL)"
+    },
+    {
+      "kind": "issue",
+      "number": 176080,
+      "name": "sessions: archive/reconcile worker queues have no settlement timeout or admission bound",
+      "unblock_labels": [
+        "clawsweeper:no-new-fix-pr",
+        "needs-maintainer-review"
+      ]
+    },
+    {
+      "kind": "release",
+      "number": null,
+      "name": "latest upstream release (anchor: 607aabf8041)"
+    }
+  ]
+}
