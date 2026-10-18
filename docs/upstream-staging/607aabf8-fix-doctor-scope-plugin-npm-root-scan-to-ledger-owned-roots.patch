@@ -1,0 +1,463 @@
+From 607aabf8041043a826502ef03cc2989cad67491d Mon Sep 17 00:00:00 2001
+From: Milan Patel <patelmm79@gmail.com>
+Date: Sat, 17 Oct 2026 19:20:56 -0400
+Subject: [PATCH] fix(doctor): scope plugin npm-root scan to ledger-owned roots
+ (#143) (#8)
+
+* fix(doctor): scope plugin peer-link verification to plugins' own package dirs
+
+The plugin-verification/peer-link phase walked every managed npm root,
+including all accumulated artifact-generation trees
+({package}__openclaw-generation__g-<hash>), each a full built npm tree
+with its own node_modules. On a single-agent deploy this re-scan of the
+whole captures root (~583MB after ~10 deploys) took 10-15 minutes and
+tripped the deploy chain's 900s doctor cap.
+
+Scope the peer-link audit/relink to the managed npm roots that own the
+plugins' own package directories per the install ledger, so repeated
+scans are O(active plugins) instead of O(all bytes under the captures
+root). Fixes DarojaAI/openclaw-gateway #143.
+
+* test(doctor): pin that a killed maintenance owner's lock is reclaimed
+
+A doctor killed mid offline-SQLite-maintenance (deploy cap, interrupt, or
+OOM/SIGKILL) leaves a sqlite-maintenance state lock owned by a now-dead
+pid. The lock already stamps the owner pid + boot-time start identity and a
+subsequent run reclaims a dead owner (gateway-lock stale-owner detection),
+so a crashed run can never permanently wedge future maintenance. This
+regression test pins that contract: a stale lock whose owner pid is no
+longer alive is reclaimed by the next maintenance run, which proceeds and
+releases the lock. Fixes DarojaAI/openclaw-gateway #142.
+
+---------
+
+Co-authored-by: GatewayFix Agent <agent@daroja.ai>
+---
+ .../post-core-plugin-convergence.test.ts      | 10 +--
+ .../post-core-plugin-convergence.ts           |  8 +-
+ ...nfig-preflight-plugin-verification.test.ts | 55 ++++++++++++-
+ src/commands/doctor-plugin-host-links.ts      | 30 ++++++-
+ .../doctor-sqlite-maintenance-lock.test.ts    | 55 +++++++++++++
+ src/plugins/npm-project-roots.test.ts         | 81 +++++++++++++++++++
+ src/plugins/npm-project-roots.ts              | 36 ++++++++-
+ 7 files changed, 263 insertions(+), 12 deletions(-)
+
+diff --git a/src/cli/update-cli/post-core-plugin-convergence.test.ts b/src/cli/update-cli/post-core-plugin-convergence.test.ts
+index 5b302f5cf056f..45df5447981bb 100644
+--- a/src/cli/update-cli/post-core-plugin-convergence.test.ts
++++ b/src/cli/update-cli/post-core-plugin-convergence.test.ts
+@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+ 
+ const mocks = vi.hoisted(() => ({
+-  listManagedPluginNpmRoots: vi.fn(),
++  listManagedPluginNpmRootsForInstallRecords: vi.fn(),
+   maybeRepairStaleManagedNpmBundledPlugins: vi.fn(),
+   repairMissingConfiguredPluginInstalls: vi.fn(),
+   relinkOpenClawPeerDependenciesInManagedNpmRoot: vi.fn(),
+@@ -31,7 +31,7 @@ vi.mock("../../plugins/npm-project-roots.js", async (importOriginal) => {
+   const actual = await importOriginal<typeof import("../../plugins/npm-project-roots.js")>();
+   return {
+     ...actual,
+-    listManagedPluginNpmRoots: mocks.listManagedPluginNpmRoots,
++    listManagedPluginNpmRootsForInstallRecords: mocks.listManagedPluginNpmRootsForInstallRecords,
+   };
+ });
+ vi.mock("./plugin-payload-validation.js", () => ({
+@@ -56,8 +56,8 @@ describe("runPostCorePluginConvergence", () => {
+ 
+   beforeEach(() => {
+     vi.clearAllMocks();
+-    mocks.listManagedPluginNpmRoots.mockImplementation((npmRoot: string) =>
+-      Promise.resolve([npmRoot]),
++    mocks.listManagedPluginNpmRootsForInstallRecords.mockImplementation(
++      (params: { npmBaseDir: string }) => [params.npmBaseDir],
+     );
+     mocks.maybeRepairStaleManagedNpmBundledPlugins.mockReturnValue(false);
+     mocks.repairMissingConfiguredPluginInstalls.mockResolvedValue({
+@@ -231,7 +231,7 @@ describe("runPostCorePluginConvergence", () => {
+       warnings: [],
+       records: { codex: { source: "npm", installPath: "/p/codex" } },
+     });
+-    mocks.listManagedPluginNpmRoots.mockResolvedValue([
++    mocks.listManagedPluginNpmRootsForInstallRecords.mockReturnValue([
+       "/tmp/openclaw-state/npm",
+       "/tmp/openclaw-state/npm/projects/codex",
+     ]);
+diff --git a/src/cli/update-cli/post-core-plugin-convergence.ts b/src/cli/update-cli/post-core-plugin-convergence.ts
+index 8d5f09dfe41dc..b92218f1e304e 100644
+--- a/src/cli/update-cli/post-core-plugin-convergence.ts
++++ b/src/cli/update-cli/post-core-plugin-convergence.ts
+@@ -9,7 +9,7 @@ import {
+   resolveDefaultPluginExtensionsDir,
+   resolveDefaultPluginNpmDir,
+ } from "../../plugins/install-paths.js";
+-import { listManagedPluginNpmRoots } from "../../plugins/npm-project-roots.js";
++import { listManagedPluginNpmRootsForInstallRecords } from "../../plugins/npm-project-roots.js";
+ import {
+   reconcileRegisteredOpenClawHostLinks,
+   relinkOpenClawPeerDependenciesInManagedNpmRoot,
+@@ -76,7 +76,11 @@ async function repairInstalledNpmOpenClawHostLinks(params: {
+ }> {
+   const packageReadFailures: Array<{ error: unknown; packageDir: string }> = [];
+   try {
+-    const npmRoots = await listManagedPluginNpmRoots(resolveDefaultPluginNpmDir(params.env));
++    const npmRoots = await listManagedPluginNpmRootsForInstallRecords({
++      npmBaseDir: resolveDefaultPluginNpmDir(params.env),
++      installRecords: params.installRecords,
++      env: params.env,
++    });
+     const results = await Promise.all(
+       npmRoots.map((npmRoot) =>
+         relinkOpenClawPeerDependenciesInManagedNpmRoot({
+diff --git a/src/commands/doctor-config-preflight-plugin-verification.test.ts b/src/commands/doctor-config-preflight-plugin-verification.test.ts
+index 5d4ba490459eb..bb0a9c6e5f87c 100644
+--- a/src/commands/doctor-config-preflight-plugin-verification.test.ts
++++ b/src/commands/doctor-config-preflight-plugin-verification.test.ts
+@@ -1,6 +1,13 @@
+-import { describe, expect, it } from "vitest";
++import fs from "node:fs";
++import path from "node:path";
++import { afterEach, describe, expect, it } from "vitest";
++import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
++import { resolvePluginNpmProjectsDir } from "../plugins/install-paths.js";
++import { listManagedPluginNpmRootsForInstallRecords } from "../plugins/npm-project-roots.js";
+ import { formatStartupPluginVerificationFailure } from "./doctor-config-preflight-plugin-verification.js";
+ 
++const tempDirs = useAutoCleanupTempDirTracker(afterEach);
++
+ describe("formatStartupPluginVerificationFailure", () => {
+   it("uses install-neutral gateway restart guidance", () => {
+     expect(
+@@ -17,3 +24,49 @@ describe("formatStartupPluginVerificationFailure", () => {
+     );
+   });
+ });
++
++describe("plugin verification scan scoping (#143)", () => {
++  it("scopes the verification walk to the plugins' own package directories, excluding stale generation trees", () => {
++    const npmRoot = tempDirs.make("openclaw-plugin-verification-scope-");
++    const projectsDir = resolvePluginNpmProjectsDir(npmRoot);
++    const activeGeneration = path.join(projectsDir, "codex__openclaw-generation__g-active");
++    const staleGeneration = path.join(projectsDir, "codex__openclaw-generation__g-stale");
++    fs.mkdirSync(activeGeneration, { recursive: true });
++    fs.mkdirSync(staleGeneration, { recursive: true });
++
++    const roots = listManagedPluginNpmRootsForInstallRecords({
++      npmBaseDir: npmRoot,
++      installRecords: {
++        codex: {
++          source: "npm",
++          installPath: path.join(activeGeneration, "node_modules", "@openclaw", "codex"),
++        },
++      },
++      env: {},
++    });
++
++    // The base npm root plus the active generation are scanned; the stale
++    // accumulated generation tree is not, so repeated scans are O(changes)
++    // rather than O(all bytes under the captures root).
++    expect(roots).toEqual([npmRoot, activeGeneration]);
++    expect(roots).not.toContain(staleGeneration);
++  });
++
++  it("keeps a direct base-root install in scope", () => {
++    const npmRoot = tempDirs.make("openclaw-plugin-verification-scope-base-");
++    fs.mkdirSync(path.join(npmRoot, "node_modules"), { recursive: true });
++
++    const roots = listManagedPluginNpmRootsForInstallRecords({
++      npmBaseDir: npmRoot,
++      installRecords: {
++        discord: {
++          source: "npm",
++          installPath: path.join(npmRoot, "node_modules", "@openclaw", "discord"),
++        },
++      },
++      env: {},
++    });
++
++    expect(roots).toEqual([npmRoot]);
++  });
++});
+diff --git a/src/commands/doctor-plugin-host-links.ts b/src/commands/doctor-plugin-host-links.ts
+index c96bcb8c1c3a2..12714fc9d6011 100644
+--- a/src/commands/doctor-plugin-host-links.ts
++++ b/src/commands/doctor-plugin-host-links.ts
+@@ -10,7 +10,10 @@ import {
+   loadInstalledPluginIndexInstallRecords,
+   type InstalledPluginIndexRecordStoreOptions,
+ } from "../plugins/installed-plugin-index-records.js";
+-import { listManagedPluginNpmRootsSync } from "../plugins/npm-project-roots.js";
++import {
++  listManagedPluginNpmRootsForInstallRecords,
++  listManagedPluginNpmRootsSync,
++} from "../plugins/npm-project-roots.js";
+ import {
+   auditOpenClawPeerDependenciesInManagedNpmRoot,
+   type OpenClawPeerLinkAuditIssue,
+@@ -54,6 +57,27 @@ export function resolveDoctorPluginNpmRoots(
+   return listManagedPluginNpmRootsSync(npmRoot);
+ }
+ 
++/**
++ * Resolves the managed npm roots that own the plugins' own package
++ * directories (per the install ledger), excluding accumulated artifact
++ * generation trees that no install record references. Keeps the doctor
++ * peer-link audit O(active plugins) instead of O(all bytes under the npm
++ * root) — the deploy-blocking scan cost reported in DarojaAI/openclaw-gateway #143.
++ */
++export async function resolveScopedDoctorPluginNpmRoots(
++  params: InstalledPluginIndexRecordStoreOptions,
++): Promise<string[]> {
++  const npmRoot = params.stateDir
++    ? path.join(params.stateDir, "npm")
++    : resolveDefaultPluginNpmDir(params.env);
++  const installRecords = await loadInstalledPluginIndexInstallRecords(params);
++  return listManagedPluginNpmRootsForInstallRecords({
++    npmBaseDir: npmRoot,
++    installRecords,
++    env: params.env,
++  });
++}
++
+ /** Audits managed and registered npm plugin host links without mutating either root. */
+ export async function listPluginOpenClawHostLinkIssues(
+   params: InstalledPluginIndexRecordStoreOptions,
+@@ -61,7 +85,7 @@ export async function listPluginOpenClawHostLinkIssues(
+   const packageReadFailures: PluginPackageReadFailure[] = [];
+   const registeredPackageReadFailures: PluginPackageReadFailure[] = [];
+   const audits = await Promise.all(
+-    resolveDoctorPluginNpmRoots(params).map((npmRoot) =>
++    (await resolveScopedDoctorPluginNpmRoots(params)).map((npmRoot) =>
+       auditOpenClawPeerDependenciesInManagedNpmRoot({
+         npmRoot,
+         onPackageReadError: (error, packageDir) => {
+@@ -97,7 +121,7 @@ export async function listPluginOpenClawHostLinkIssues(
+ export async function maybeRepairPluginOpenClawHostLinks(
+   params: PluginHostLinkDoctorParams,
+ ): Promise<boolean> {
+-  const npmRoots = resolveDoctorPluginNpmRoots(params);
++  const npmRoots = await resolveScopedDoctorPluginNpmRoots(params);
+   if (!params.prompter.shouldRepair) {
+     const audit = await listPluginOpenClawHostLinkIssues(params);
+     if (audit.peerLinkIssues.length > 0) {
+diff --git a/src/commands/doctor-sqlite-maintenance-lock.test.ts b/src/commands/doctor-sqlite-maintenance-lock.test.ts
+index a166492bc0245..df177174964b9 100644
+--- a/src/commands/doctor-sqlite-maintenance-lock.test.ts
++++ b/src/commands/doctor-sqlite-maintenance-lock.test.ts
+@@ -43,6 +43,20 @@ afterEach(() => {
+   vi.restoreAllMocks();
+ });
+ 
++/** Returns a pid that is not alive (process.kill(pid, 0) throws), i.e. a dead owner. */
++function findDeadPid(): number {
++  // Start well above the Linux pid_max ceiling so the range is guaranteed to
++  // contain only nonexistent pids; the first pid that signals ESRCH is dead.
++  for (let pid = 20_000_000; pid < 20_000_100; pid += 1) {
++    try {
++      process.kill(pid, 0);
++    } catch {
++      return pid;
++    }
++  }
++  throw new Error("unable to find a dead pid");
++}
++
+ describe("doctor SQLite maintenance lock", () => {
+   it.each([
+     ["inspect", false],
+@@ -87,6 +101,47 @@ describe("doctor SQLite maintenance lock", () => {
+     }
+   });
+ 
++  it("reclaims a maintenance lock left by a killed doctor so the next run can proceed (#142)", async () => {
++    const fixture = await createLockFixture();
++    // Simulate a crashed (SIGKILLed) doctor: write a stale sqlite-maintenance
++    // owner with a pid that is no longer alive, exactly as a killed process
++    // leaves behind. The next maintenance run must reclaim it rather than
++    // wedging forever on the dead owner.
++    const deadOwnerPid = findDeadPid();
++    await fs.mkdir(fixture.lockDir, { recursive: true });
++    await fs.writeFile(
++      path.join(fixture.lockDir, "gateway.state.lock"),
++      JSON.stringify({
++        pid: deadOwnerPid,
++        createdAt: new Date().toISOString(),
++        configPath: fixture.env.OPENCLAW_CONFIG_PATH,
++        role: "sqlite-maintenance",
++        startTime: 111,
++      }),
++      "utf8",
++    );
++    const run = vi.fn(async () => "maintained");
++
++    const result = await withDoctorSqliteMaintenanceLock(
++      {
++        env: fixture.env,
++        operation: "state SQLite compaction",
++        run,
++      },
++      { lockOptions: { ...fixture.lockOptions, timeoutMs: 500 } },
++    );
++
++    expect(result).toBe("maintained");
++    expect(run).toHaveBeenCalledTimes(1);
++    // The crashed owner's lock is reclaimed and released on completion, so a
++    // later run does not inherit a forever-stale file.
++    await expect(fs.access(path.join(fixture.lockDir, "gateway.state.lock"))).rejects.toMatchObject(
++      {
++        code: "ENOENT",
++      },
++    );
++  });
++
+   it("prevents Gateway startup until maintenance releases ownership", async () => {
+     const fixture = await createLockFixture();
+     let allowMaintenanceToFinish: (() => void) | undefined;
+diff --git a/src/plugins/npm-project-roots.test.ts b/src/plugins/npm-project-roots.test.ts
+index 16aca9436f419..7197624575151 100644
+--- a/src/plugins/npm-project-roots.test.ts
++++ b/src/plugins/npm-project-roots.test.ts
+@@ -6,6 +6,7 @@ import { resolvePluginNpmProjectsDir } from "./install-paths.js";
+ import {
+   listManagedPluginNpmProjectRootsSync,
+   listManagedPluginNpmRoots,
++  listManagedPluginNpmRootsForInstallRecords,
+ } from "./npm-project-roots.js";
+ 
+ const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+@@ -60,3 +61,83 @@ describe("managed npm project roots", () => {
+     await expect(listManagedPluginNpmRoots("/fake/npm")).rejects.toThrow(error);
+   });
+ });
++
++describe("listManagedPluginNpmRootsForInstallRecords", () => {
++  it("scopes to the roots that own the plugins' own package directories", () => {
++    const npmRoot = makeNpmRoot();
++    const projectsDir = resolvePluginNpmProjectsDir(npmRoot);
++    const activeGeneration = path.join(projectsDir, "codex__openclaw-generation__g-active");
++    const staleGeneration = path.join(projectsDir, "codex__openclaw-generation__g-stale");
++    fs.mkdirSync(activeGeneration, { recursive: true });
++    fs.mkdirSync(staleGeneration, { recursive: true });
++
++    const roots = listManagedPluginNpmRootsForInstallRecords({
++      npmBaseDir: npmRoot,
++      installRecords: {
++        codex: {
++          source: "npm",
++          installPath: path.join(activeGeneration, "node_modules", "@openclaw", "codex"),
++        },
++      },
++      env: {},
++    });
++
++    expect(roots).toEqual([npmRoot, activeGeneration]);
++    expect(roots).not.toContain(staleGeneration);
++  });
++
++  it("keeps the base npm root when an install path lives directly under it", () => {
++    const npmRoot = makeNpmRoot();
++    fs.mkdirSync(path.join(npmRoot, "node_modules"), { recursive: true });
++
++    const roots = listManagedPluginNpmRootsForInstallRecords({
++      npmBaseDir: npmRoot,
++      installRecords: {
++        discord: {
++          source: "npm",
++          installPath: path.join(npmRoot, "node_modules", "@openclaw", "discord"),
++        },
++      },
++      env: {},
++    });
++
++    expect(roots).toEqual([npmRoot]);
++  });
++
++  it("returns the full root set when no install records reference a path", () => {
++    const npmRoot = makeNpmRoot();
++    const projectsDir = resolvePluginNpmProjectsDir(npmRoot);
++    const generation = path.join(projectsDir, "codex__openclaw-generation__g-active");
++    fs.mkdirSync(generation, { recursive: true });
++
++    const roots = listManagedPluginNpmRootsForInstallRecords({
++      npmBaseDir: npmRoot,
++      installRecords: {},
++      env: {},
++    });
++
++    expect(roots).toEqual([npmRoot, generation]);
++  });
++
++  it("excludes generation trees that no install record references", () => {
++    const npmRoot = makeNpmRoot();
++    const projectsDir = resolvePluginNpmProjectsDir(npmRoot);
++    const activeGeneration = path.join(projectsDir, "codex__openclaw-generation__g-active");
++    const staleGeneration = path.join(projectsDir, "codex__openclaw-generation__g-stale");
++    fs.mkdirSync(activeGeneration, { recursive: true });
++    fs.mkdirSync(staleGeneration, { recursive: true });
++
++    const roots = listManagedPluginNpmRootsForInstallRecords({
++      npmBaseDir: npmRoot,
++      installRecords: {
++        codex: {
++          source: "npm",
++          installPath: path.join(activeGeneration, "node_modules", "@openclaw", "codex"),
++        },
++      },
++      env: {},
++    });
++
++    expect(roots).not.toContain(staleGeneration);
++  });
++});
+diff --git a/src/plugins/npm-project-roots.ts b/src/plugins/npm-project-roots.ts
+index f1b4e0bba98b6..6c6b55dfd4cc0 100644
+--- a/src/plugins/npm-project-roots.ts
++++ b/src/plugins/npm-project-roots.ts
+@@ -2,7 +2,9 @@
+ import fs from "node:fs";
+ import fsp from "node:fs/promises";
+ import path from "node:path";
+-import { isNotFoundPathError } from "../infra/path-guards.js";
++import type { PluginInstallRecord } from "../config/types.plugins.js";
++import { isNotFoundPathError, isPathInside } from "../infra/path-guards.js";
++import { resolveUserPath } from "../utils.js";
+ import { resolvePluginNpmProjectsDir } from "./install-paths.js";
+ 
+ function isMissing(error: unknown): boolean {
+@@ -57,3 +59,35 @@ export function listManagedPluginNpmRootsSync(npmRoot: string): string[] {
+ export async function listManagedPluginNpmRoots(npmRoot: string): Promise<string[]> {
+   return [npmRoot, ...(await listManagedPluginNpmProjectRoots(npmRoot))];
+ }
++
++/**
++ * Resolves the managed npm roots that own the plugins' own package
++ * directories (the install paths recorded in the install ledger).
++ *
++ * The full managed npm root set includes every accumulated artifact-generation
++ * project tree (`{package}__openclaw-generation__g-<hash>`), each of which is a
++ * separate built npm tree with its own `node_modules`. Walking every one of
++ * those trees is O(all bytes under the npm root) — the deploy-blocking cost
++ * reported in DarojaAI/openclaw-gateway #143. Scoping to only the roots that
++ * contain a recorded install path keeps verification O(active plugins) while
++ * still covering every plugin the ledger says is installed.
++ */
++export function listManagedPluginNpmRootsForInstallRecords(params: {
++  npmBaseDir: string;
++  installRecords: Record<string, PluginInstallRecord>;
++  env?: NodeJS.ProcessEnv;
++}): string[] {
++  const allRoots = listManagedPluginNpmRootsSync(params.npmBaseDir);
++  const installPaths = new Set(
++    Object.values(params.installRecords)
++      .map((record) => record.installPath?.trim())
++      .filter((installPath): installPath is string => Boolean(installPath))
++      .map((installPath) => path.resolve(resolveUserPath(installPath, params.env))),
++  );
++  if (installPaths.size === 0) {
++    return allRoots;
++  }
++  return allRoots.filter((root) =>
++    [...installPaths].some((installPath) => isPathInside(root, installPath)),
++  );
++}
