@@ -127,6 +127,27 @@ else
     log_warn "openrouter-provision source not found at $provision_src"
 fi
 
+# 4c. Install cross-agent-task CLI (fleet plan C1, issue #164)
+#
+# Why: the durable cross-agent task queue (docs/contracts/
+# CROSS-AGENT-TASK-BUS.md in linux-desktop-seed) needs its submit/
+# claim/complete CLI on the VM at a stable path. The LDS D1 audit cron
+# (#2409/#2408) verifies every coordination lane's session-start reads
+# the queue this CLI manages.
+catask_src="$REPO_ROOT/scripts/cross-agent-task.py"
+catask_dst="/usr/local/bin/cross-agent-task"
+if [[ -f "$catask_src" ]]; then
+    if [[ -f "$catask_dst" ]] && cmp -s "$catask_src" "$catask_dst"; then
+        log_info "cross-agent-task already installed and up-to-date"
+    else
+        log_info "Installing cross-agent-task CLI..."
+        install -m 0755 "$catask_src" "$catask_dst"
+        log_info "cross-agent-task CLI installed to $catask_dst"
+    fi
+else
+    log_warn "cross-agent-task source not found at $catask_src"
+fi
+
 # 5. Install shared viz service (mermaid/graphviz/chartjs render server)
 viz_install_src="$REPO_ROOT/scripts/services/install-viz-service.sh"
 if [[ -f "$viz_install_src" ]]; then
