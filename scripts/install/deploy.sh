@@ -262,6 +262,23 @@ if [[ -f "$lane_health_installer" ]] && [[ "${SKIP_LANE_HEALTH_PROBE:-0}" != "1"
     if [[ -n "${OPENCLAW_OPERATOR_CHANNEL:-}" ]]; then
         install_args+=(--operator-channel "$OPENCLAW_OPERATOR_CHANNEL")
     fi
+
+# 4d. Install gateway start-failure diagnostic collector (issue #165)
+#
+# Why: the openclaw binary swallows bootstrap exceptions ("The CLI command
+# failed."), so crash-loop diagnosis needs the read-only surfaces this
+# collector drives (doctor --lint, journal, sidecars, disk). Deploy failure
+# paths and operators call $HOME/.local/bin/diagnose-gateway-start-failure.
+diag_installer="$REPO_ROOT/scripts/install/install-gateway-failure-diagnostics.sh"
+if [[ -f "$diag_installer" ]]; then
+    if bash "$diag_installer"; then
+        log_info "gateway start-failure diagnostic installed"
+    else
+        log_warn "gateway start-failure diagnostic install failed (non-fatal)"
+    fi
+else
+    log_warn "gateway diagnostic installer not found at $diag_installer"
+fi
     if bash "$lane_health_installer" "${install_args[@]}"; then
         log_info "Lane-health probe installed"
     else
