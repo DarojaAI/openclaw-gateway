@@ -1,0 +1,58 @@
+name: Notify LDS of pin change
+
+# Stage-0 trigger (cross-repo seam): a pin change in THIS repo must run the
+# LDS upgrade preflight BEFORE any deploy dispatch consumes the pin.
+# Sends repository_dispatch (openclaw-pin-change) to DarojaAI/linux-desktop-seed
+# per changed pin file, carrying env + version + commit sha.
+#
+# One-time setup: secret LDS_CROSS_REPO_TOKEN — a fine-grained PAT with
+# contents:read + commit statuses:write + workflows:write (repository_dispatch)
+# on DarojaAI/linux-desktop-seed. Until present, this workflow fails loudly at
+# the dispatch step and the LDS preflight must be run manually
+# (gh workflow run pin-upgrade-preflight.yml -f environment=<env>).
+
+on:
+  pull_request:
+    paths: ["config/openclaw-version*"]
+  push:
+    branches: [main]
+    paths: ["config/openclaw-version*"]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Dispatch pin-change to LDS per changed pin file
+        env:
+          GH_TOKEN: ${{ secrets.LDS_CROSS_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::LDS_CROSS_REPO_TOKEN not set — cannot notify LDS. Run the LDS pin-upgrade-preflight manually for every changed environment." >&2
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD -- config/openclaw-version*)"
+          else
+            FILES="$(git diff --name-only HEAD~1 HEAD -- config/openclaw-version*)"
+          fi
+          [ -n "$FILES" ] || { echo "no pin files changed"; exit 0; }
+          for f in $FILES; do
+            ENV_NAME="$(basename "$f" | sed 's/^openclaw-version//; s/^\.//')"
+            ENV_NAME="${ENV_NAME:-test}"
+            VER="$(tr -d '[:space:]' < "$f")"
+            [ -n "$VER" ] || { echo "::error::$f is empty — refusing to notify"; exit 1; }
+            echo "dispatching: env=$ENV_NAME version=$VER sha=$GITHUB_SHA"
+            gh api -X POST "repos/DarojaAI/linux-desktop-seed/dispatches" \
+              -f event_type="openclaw-pin-change" \
+              -F "client_payload[env]=$ENV_NAME" \
+              -F "client_payload[version]=$VER" \
+              -F "client_payload[sha]=$GITHUB_SHA"
+          done
