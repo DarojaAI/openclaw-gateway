@@ -203,6 +203,36 @@ fail-closed). The `preflight.decision.v1` event is emitted by the gate
 on every decision and appended to `PREFLIGHT_EVENT_LOG`, so the hook
 never needs to synthesize its own audit record.
 
+### Implementation seam (shipped 2026-10-28)
+
+The `before_route_inbound_message` gateway hook surface named above **does
+not exist upstream** (0 grep hits through openclaw 2026.10.8; the native-hook
+proposal is open as [openclaw/openclaw#176299](https://github.com/openclaw/openclaw/issues/176299)
+and remains the future primary seam). Upstream shipped a typed plugin-hooks
+API with an equivalent gate, and the shipped implementation uses it:
+
+- **Hook:** `before_agent_run` — "Inspect prompt and session messages before
+  model submission" (`docs/plugins/hooks` in the upstream repo; blocks the run
+  on handler error or timeout).
+- **Carrier:** the `preflight-emitter` operator plugin
+  ([`extensions/preflight-emitter/`](../../extensions/preflight-emitter/README.md)
+  in this repo). Per run **with a channel sender** it invokes the deployed
+  seed shim (`~/.openclaw/scripts/remote/preflight-before-route-inbound-message.sh`)
+  with `ACTOR=<senderId>`, `AGENT=<ctx.agentId>`; the shim runs
+  `preflight-gate.py evaluate` and the gate appends the
+  `preflight.decision.v1` event (contract §Event — the plugin never
+  synthesizes audit records).
+- **Exit mapping:** shim exit 0 → pass; ANY non-zero → block
+  (`reason: "preflight-exit-<code>"`) — fail-closed per §Decision.
+- **Degradation:** shim absent/not executable → plugin is inert (pass, no
+  record), mirroring the unwired-runtime path above. Runs without a sender
+  (heartbeat, cron, subagent-internal) are outside the inbound-message scope
+  and stay ungated unless `PREFLIGHT_EMITTER_ENFORCE_WITHOUT_SENDER=1`.
+
+Install and verification: see the plugin README. When the native
+`before_route_inbound_message` hook lands upstream, migrate to it (it sees the
+full envelope, including CAPABILITY/ROUTE) and retire the plugin.
+
 ### Worked examples against the example registries
 
 For a local run against the repo examples, point the env vars at the

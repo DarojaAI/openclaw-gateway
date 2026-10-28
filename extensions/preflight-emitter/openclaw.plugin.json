@@ -1,0 +1,17 @@
+{
+  "id": "preflight-emitter",
+  "name": "Preflight Emitter",
+  "version": "2026.10.28",
+  "description": "Per-invocation preflight gate emission (contract preflight-v1 P4): invokes the deployed preflight shim on every sender-attributed run, before any LLM call lands, and blocks on any non-zero gate exit. The gate itself appends the preflight.decision.v1 telemetry event.",
+  "author": "DarojaAI",
+  "license": "Apache-2.0",
+  "runtime": {
+    "minOpenclawVersion": ">=2026.10.5",
+    "hookApi": "before_agent_run"
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
