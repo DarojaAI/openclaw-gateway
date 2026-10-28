@@ -1,0 +1,9 @@
+{
+  "name": "@daroja/preflight-emitter",
+  "version": "2026.10.28",
+  "description": "DarojaAI per-invocation preflight gate emission — contract docs/contracts/preflight-v1.md §P4.",
+  "type": "module",
+  "private": true,
+  "main": "index.ts",
+  "license": "Apache-2.0"
+}
