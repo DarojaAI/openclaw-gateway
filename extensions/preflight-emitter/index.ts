@@ -51,20 +51,26 @@ export default definePluginEntry({
   description:
     "Per-invocation preflight gate emission (contract preflight-v1 P4): runs the deployed preflight shim before any LLM call and blocks on any non-zero gate exit.",
   register(api) {
+    const log = api.logger;
     api.on(
       "before_agent_run",
       async (event: AgentRunEvent, ctx: AgentRunCtx): Promise<GateOutcome | void> => {
         const enforceWithoutSender =
           process.env.PREFLIGHT_EMITTER_ENFORCE_WITHOUT_SENDER === "1";
         if (event.senderId === undefined && !enforceWithoutSender) {
+          log?.debug?.("preflight-emitter: run without sender — outside inbound scope, ungated");
           return; // not an inbound message: outside contract scope
         }
         const shim = shimPath();
         try {
           await access(shim, constants.X_OK);
         } catch {
+          log?.warn?.("preflight-emitter: shim not deployed — gate inert (unwired runtime)");
           return; // unwired runtime: shim absent -> inert (contract degradation path)
         }
+        log?.info?.(
+          `preflight-emitter: evaluating gate actor=${event.senderId ?? "-"} agent=${ctx.agentId ?? "-"}`,
+        );
         try {
           await execFileP("bash", [shim], {
             env: { ...process.env, ACTOR: event.senderId ?? "", AGENT: ctx.agentId ?? "" },
