@@ -1,0 +1,11 @@
+{
+  "$comment": "configOwnership pin (2026-10-18 prod incident): an unknown root-context process rewrote ~/.openclaw/openclaw.json as root:root 0600, so the desktopuser gateway could not re-read its own config (reload silently skipped; restart/deploy would fail; ownership was restored by hand). The nightly config-drift check stats the live config and treats any uid/gid/mode mismatch as drift. mode is the deploy-owned truth: merge-openclaw-config.py stamps 0644, then the config-activation step hardens the live file to 0444 (r--r--r--; scripts/ci/activate-staged-config.sh chmod 444) — keep the pin in sync with that stamp. uid/gid are the config owner's — desktopuser, the user-scoped unit user (id -u / id -g; 1000/1000 is the Ubuntu first-user default) — keep in sync if the unit user ever changes.",
+  "update.channel": "stable",
+  "update.checkOnStart": false,
+  "update.auto.enabled": false,
+  "configOwnership": {
+    "uid": 1000,
+    "gid": 1000,
+    "mode": "0444"
+  }
+}

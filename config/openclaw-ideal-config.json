@@ -1,0 +1,911 @@
+{
+  "logging": {
+    "audit": {
+      "enabled": true,
+      "executionIdentity": true
+    }
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.11.3"
+  },
+  "session": {
+    "reset": {
+      "mode": "idle",
+      "idleMinutes": 1440
+    },
+    "maintenance": {
+      "mode": "enforce",
+      "pruneAfter": "30d",
+      "archiveDashboardAfter": "7d",
+      "maxEntries": 5000,
+      "coldStorage": {
+        "enabled": true,
+        "afterDays": 30
+      }
+    }
+  },
+  "secrets": {
+    "providers": {
+      "env": {
+        "source": "env"
+      }
+    }
+  },
+  "browser": {
+    "noSandbox": true
+  },
+  "models": {
+    "mode": "replace",
+    "providers": {
+      "openrouter": {
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "api": "openai-completions",
+        "injectNumCtxForOpenAICompat": true,
+        "timeoutSeconds": 300,
+        "params": {
+          "provider": {
+            "ignore": [
+              "morph"
+            ]
+          }
+        },
+        "models": [
+          {
+            "id": "anthropic/claude-haiku-4.5",
+            "name": "Anthropic: Claude Haiku 4.5",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 1e-06,
+              "output": 5e-06,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "anthropic/claude-sonnet-4.5",
+            "name": "Anthropic: Claude Sonnet 4.5",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 3e-06,
+              "output": 1.5e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "deepseek/deepseek-v4-flash",
+            "name": "DeepSeek: DeepSeek V4 Flash",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 9e-08,
+              "output": 1.8e-07,
+              "cacheRead": 2e-08,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1048576,
+            "maxTokens": 32768,
+            "compat": {
+              "thinkingFormat": "openrouter"
+            }
+          },
+          {
+            "id": "deepseek/deepseek-v4-flash-0731",
+            "name": "DeepSeek: DeepSeek V4 Flash 0731",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 8e-08,
+              "output": 1.8e-07,
+              "cacheRead": 1.6e-08,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1310720,
+            "maxTokens": 384000,
+            "compat": {
+              "thinkingFormat": "openrouter"
+            }
+          },
+          {
+            "id": "deepseek/deepseek-v4-pro",
+            "name": "DeepSeek: DeepSeek V4 Pro",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 4.35e-07,
+              "output": 8.7e-07,
+              "cacheRead": 3.625e-09,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1048576,
+            "maxTokens": 32768,
+            "compat": {
+              "thinkingFormat": "openrouter"
+            }
+          },
+          {
+            "id": "minimax/minimax-m2.7",
+            "name": "MiniMax: MiniMax M2.7",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 2.5e-07,
+              "output": 1e-06,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 204800,
+            "maxTokens": 8192
+          },
+          {
+            "id": "minimax/minimax-m3",
+            "name": "MiniMax: MiniMax M3",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 3e-07,
+              "output": 1.2e-06,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1048576,
+            "maxTokens": 8192
+          },
+          {
+            "id": "moonshotai/kimi-k3",
+            "name": "MoonshotAI: Kimi K3",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 3e-06,
+              "output": 1.5e-05,
+              "cacheRead": 3e-07,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1048576,
+            "maxTokens": 16384
+          },
+          {
+            "id": "morph/morph-v3-fast",
+            "name": "Morph: Morph V3 Fast",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 8e-07,
+              "output": 1.2e-06,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 81920,
+            "maxTokens": 8192
+          },
+          {
+            "id": "xiaomi/mimo-v2.5",
+            "name": "Xiaomi: MiMo-V2.5",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video"
+            ],
+            "cost": {
+              "input": 1.05e-07,
+              "output": 2.8e-07,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1048576,
+            "maxTokens": 32768
+          },
+          {
+            "id": "z-ai/glm-5.2",
+            "name": "Z.ai: GLM 5.2",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 5.46e-07,
+              "output": 1.716e-06,
+              "cacheRead": 1.014e-07,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1048576,
+            "maxTokens": 32768
+          },
+          {
+            "id": "tencent/hy3",
+            "name": "Tencent: Hy3",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 1e-06,
+              "output": 3e-06,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 262144,
+            "maxTokens": 32768
+          }
+        ]
+      },
+      "anthropic": {
+        "baseUrl": "https://api.anthropic.com",
+        "api": "anthropic-messages",
+        "apiKey": {
+          "source": "env",
+          "provider": "env",
+          "id": "CLAUDE_API_KEY"
+        },
+        "timeoutSeconds": 300,
+        "models": [
+          {
+            "id": "claude-opus-5-5",
+            "name": "Anthropic: Claude Opus 5.5",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 4e-06,
+              "output": 2e-05,
+              "cacheRead": 1e-06,
+              "cacheWrite": 4e-06
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 128000
+          },
+          {
+            "id": "claude-sonnet-5-5",
+            "name": "Anthropic: Claude Sonnet 5.5",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 2e-06,
+              "output": 1e-05,
+              "cacheRead": 2e-07,
+              "cacheWrite": 2e-06
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 128000
+          },
+          {
+            "id": "claude-haiku-5-5",
+            "name": "Anthropic: Claude Haiku 5.5",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 1e-07,
+              "output": 5e-07,
+              "cacheRead": 1e-08,
+              "cacheWrite": 1e-07
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 128000
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "ownership": "explicit",
+    "defaults": {
+      "maxConcurrent": 10,
+      "timeoutSeconds": 1800,
+      "model": "openrouter/minimax/minimax-m3",
+      "sandbox": {
+        "workspaceAccess": "rw",
+        "backend": "docker",
+        "mode": "non-main",
+        "docker": {
+          "image": "openclaw-sandbox-tools:20260729",
+          "user": "1000:1000",
+          "network": "bridge",
+          "readOnlyRoot": true,
+          "capDrop": [
+            "ALL"
+          ],
+          "cpus": 1,
+          "memory": "512m",
+          "pidsLimit": 512,
+          "containerPrefix": "openclaw-sandbox-",
+          "dns": [
+            "1.1.1.1",
+            "9.9.9.9"
+          ],
+          "apparmorProfile": "docker-default",
+          "extraHosts": [
+            "host.docker.internal:host-gateway"
+          ]
+        }
+      },
+      "compaction": {
+        "keepRecentTokens": 10000,
+        "model": "openrouter/minimax/minimax-m3",
+        "maxActiveTranscriptBytes": "20mb"
+      },
+      "heartbeat": {
+        "every": "0m",
+        "model": "openrouter/deepseek/deepseek-v4-flash"
+      },
+      "thinkingDefault": "off",
+      "models": {
+        "openrouter/anthropic/claude-haiku-4.5": {
+          "alias": "haiku"
+        },
+        "openrouter/anthropic/claude-sonnet-4.5": {
+          "alias": "reasoning"
+        },
+        "openrouter/morph/morph-v3-fast": {
+          "alias": "speedy"
+        },
+        "openrouter/minimax/minimax-m2.7": {
+          "alias": "coding"
+        },
+        "openrouter/minimax/minimax-m3": {
+          "alias": "minimax3"
+        },
+        "openrouter/deepseek/deepseek-v4-flash": {
+          "alias": "ds4"
+        },
+        "openrouter/deepseek/deepseek-v4-pro": {
+          "alias": "ds4-pro"
+        },
+        "openrouter/deepseek/deepseek-v4-flash-0731": {
+          "alias": "ds4-0731"
+        },
+        "openrouter/xiaomi/mimo-v2.5": {
+          "alias": "mimo-v25"
+        },
+        "openrouter/z-ai/glm-5.2": {
+          "alias": "glm-5.2"
+        },
+        "openrouter/moonshotai/kimi-k3": {
+          "alias": "kimi-k3"
+        },
+        "openrouter/tencent/hy3": {},
+        "anthropic/claude-opus-5-5": {
+          "alias": "claude-max"
+        },
+        "anthropic/claude-sonnet-5-5": {
+          "alias": "claude-sonnet-5-5"
+        },
+        "anthropic/claude-haiku-5-5": {
+          "alias": "claude-haiku-5-5"
+        }
+      },
+      "subagents": {
+        "allowAgents": []
+      },
+      "systemAgent": {
+        "agentId": "linux_desktop_seed"
+      },
+      "modelPolicy": {
+        "allow": [
+          "openrouter/anthropic/claude-haiku-4.5",
+          "openrouter/anthropic/claude-sonnet-4.5",
+          "openrouter/morph/morph-v3-fast",
+          "openrouter/minimax/minimax-m2.7",
+          "openrouter/minimax/minimax-m3",
+          "openrouter/deepseek/deepseek-v4-flash",
+          "openrouter/deepseek/deepseek-v4-pro",
+          "openrouter/deepseek/deepseek-v4-flash-0731",
+          "openrouter/xiaomi/mimo-v2.5",
+          "openrouter/z-ai/glm-5.2",
+          "openrouter/moonshotai/kimi-k3",
+          "openrouter/tencent/hy3",
+          "anthropic/claude-opus-5-5",
+          "anthropic/claude-sonnet-5-5",
+          "anthropic/claude-haiku-5-5"
+        ]
+      }
+    },
+    "entries": {
+      "linux_desktop_seed": {
+        "name": "linux_desktop_seed",
+        "workspace": "/home/desktopuser/GithubProjects/linux-desktop-seed",
+        "agentDir": "/home/desktopuser/.openclaw/agents/linux_desktop_seed/agent",
+        "heartbeat": {
+          "every": "2h",
+          "activeHours": {
+            "start": "07:00",
+            "end": "23:00",
+            "timezone": "UTC"
+          },
+          "isolatedSession": true,
+          "lightContext": true
+        },
+        "tools": {
+          "profile": "coding",
+          "exec": {
+            "mode": "full",
+            "host": "auto",
+            "safeBins": [
+              "git",
+              "gh",
+              "openclaw",
+              "openclaw-model-manager",
+              "jq",
+              "date"
+            ],
+            "safeBinTrustedDirs": [
+              "/usr/bin",
+              "/usr/local/bin"
+            ],
+            "safeBinProfiles": {
+              "git": {},
+              "gh": {},
+              "openclaw": {},
+              "openclaw-model-manager": {},
+              "date": {}
+            }
+          },
+          "allow": [
+            "read",
+            "write",
+            "edit",
+            "view_image",
+            "process",
+            "memory_search",
+            "memory_get",
+            "sessions_list",
+            "sessions_history",
+            "sessions_spawn",
+            "sessions_send",
+            "web_fetch",
+            "web_search",
+            "nodes",
+            "cron",
+            "session_status",
+            "memory_search",
+            "memory_get",
+            "exec",
+            "apply_patch"
+          ],
+          "deny": [
+            "bash /home/desktopuser/.openclaw/scripts/remote/write-gcp-credentials.sh",
+            "bash /home/desktopuser/.openclaw/scripts/remote/merge-openclaw-config.py",
+            "write /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf",
+            "edit /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf"
+          ]
+        },
+        "subagents": {
+          "allowAgents": []
+        }
+      },
+      "daroja_coding_agent": {
+        "name": "daroja_coding_agent",
+        "workspace": "/home/desktopuser/GithubProjects/daroja-coding-agent",
+        "agentDir": "/home/desktopuser/.openclaw/agents/daroja_coding_agent/agent",
+        "tools": {
+          "profile": "coding",
+          "exec": {
+            "mode": "full",
+            "host": "auto",
+            "safeBins": [
+              "git",
+              "gh",
+              "openclaw",
+              "openclaw-model-manager",
+              "jq",
+              "date"
+            ],
+            "safeBinTrustedDirs": [
+              "/usr/bin",
+              "/usr/local/bin"
+            ],
+            "safeBinProfiles": {
+              "git": {},
+              "gh": {},
+              "openclaw": {},
+              "openclaw-model-manager": {},
+              "date": {}
+            }
+          },
+          "allow": [
+            "read",
+            "write",
+            "edit",
+            "view_image",
+            "process",
+            "memory_search",
+            "memory_get",
+            "sessions_list",
+            "sessions_history",
+            "sessions_spawn",
+            "sessions_send",
+            "web_fetch",
+            "web_search",
+            "nodes",
+            "cron",
+            "session_status",
+            "exec",
+            "apply_patch"
+          ],
+          "deny": [
+            "bash /home/desktopuser/.openclaw/scripts/remote/write-gcp-credentials.sh",
+            "write /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf",
+            "edit /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf"
+          ]
+        },
+        "subagents": {
+          "allowAgents": []
+        }
+      },
+      "darojaai_architect": {
+        "name": "darojaai_architect",
+        "workspace": "/home/desktopuser/GithubProjects/darojaai-architect",
+        "agentDir": "/home/desktopuser/.openclaw/agents/darojaai_architect/agent",
+        "tools": {
+          "profile": "coding",
+          "exec": {
+            "mode": "full",
+            "host": "auto",
+            "safeBins": [
+              "git",
+              "gh",
+              "openclaw",
+              "openclaw-model-manager",
+              "jq",
+              "date"
+            ],
+            "safeBinTrustedDirs": [
+              "/usr/bin",
+              "/usr/local/bin"
+            ],
+            "safeBinProfiles": {
+              "git": {},
+              "gh": {},
+              "openclaw": {},
+              "openclaw-model-manager": {},
+              "date": {}
+            }
+          },
+          "allow": [
+            "read",
+            "write",
+            "edit",
+            "view_image",
+            "process",
+            "memory_search",
+            "memory_get",
+            "sessions_list",
+            "sessions_history",
+            "sessions_spawn",
+            "sessions_send",
+            "web_fetch",
+            "web_search",
+            "nodes",
+            "cron",
+            "session_status",
+            "exec",
+            "apply_patch"
+          ],
+          "deny": [
+            "bash /home/desktopuser/.openclaw/scripts/remote/write-gcp-credentials.sh",
+            "write /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf",
+            "edit /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf"
+          ]
+        },
+        "subagents": {
+          "allowAgents": []
+        }
+      },
+      "linux_headless_setup_curator": {
+        "name": "linux_headless_setup_curator",
+        "workspace": "/home/desktopuser/GithubProjects/linux-headless-setup",
+        "agentDir": "/home/desktopuser/.openclaw/agents/linux_headless_setup_curator/agent",
+        "tools": {
+          "profile": "coding",
+          "exec": {
+            "mode": "full",
+            "host": "auto",
+            "safeBins": [
+              "git",
+              "gh",
+              "openclaw",
+              "openclaw-model-manager",
+              "jq",
+              "date"
+            ],
+            "safeBinTrustedDirs": [
+              "/usr/bin",
+              "/usr/local/bin"
+            ],
+            "safeBinProfiles": {
+              "git": {},
+              "gh": {},
+              "openclaw": {},
+              "openclaw-model-manager": {},
+              "date": {}
+            }
+          },
+          "allow": [
+            "github__*",
+            "read",
+            "exec",
+            "write",
+            "edit",
+            "sessions_history",
+            "memory_search",
+            "process",
+            "apply_patch"
+          ],
+          "deny": [
+            "bash /home/desktopuser/.openclaw/scripts/remote/write-gcp-credentials.sh",
+            "bash /home/desktopuser/.openclaw/scripts/remote/merge-openclaw-config.py",
+            "write /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf",
+            "edit /home/desktopuser/.config/systemd/user/openclaw-gateway.service.d/override.conf",
+            "write /home/config/systemd/user/openclaw-gateway.service.d/override.conf",
+            "edit /home/config/systemd/user/openclaw-gateway.service.d/override.conf"
+          ]
+        },
+        "subagents": {
+          "allowAgents": []
+        }
+      }
+    }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": true,
+    "restart": true
+  },
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "healthMonitor": {
+        "enabled": false
+      },
+      "token": "${DISCORD_BOT_TOKEN}",
+      "commands": {
+        "nativeSkills": false
+      },
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist",
+      "streaming": {
+        "mode": "progress"
+      },
+      "allowFrom": [
+        "*"
+      ],
+      "guilds": {},
+      "slashCommand": {
+        "ephemeral": false
+      }
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": {
+        "source": "env",
+        "provider": "env",
+        "id": "GATEWAY_AUTH_TOKEN"
+      }
+    }
+  },
+  "mcp": {
+    "sessionIdleTtlMs": 0,
+    "servers": {}
+  },
+  "acp": {
+    "enabled": true,
+    "backend": "acpx",
+    "allowedAgents": [
+      "codex",
+      "gemini"
+    ]
+  },
+  "plugins": {
+    "entries": {
+      "openrouter": {
+        "enabled": true
+      },
+      "browser": {
+        "enabled": true
+      },
+      "minimax": {
+        "enabled": true
+      },
+      "openai": {
+        "enabled": true
+      },
+      "searxng": {
+        "enabled": true,
+        "config": {
+          "webSearch": {
+            "baseUrl": "http://localhost:8888"
+          }
+        }
+      },
+      "acpx": {
+        "enabled": true,
+        "config": {
+          "permissionMode": "approve-reads",
+          "nonInteractivePermissions": "deny"
+        }
+      },
+      "discord": {
+        "enabled": true
+      },
+      "anthropic": {
+        "enabled": true
+      }
+    }
+  },
+  "tools": {
+    "web": {
+      "search": {
+        "provider": "searxng"
+      }
+    },
+    "exec": {
+      "host": "auto",
+      "ask": "on-miss"
+    },
+    "sessions": {
+      "visibility": "all"
+    },
+    "agentToAgent": {
+      "enabled": true,
+      "allow": [
+        "*"
+      ]
+    }
+  },
+  "skills": {
+    "entries": {
+      "model-management": {
+        "enabled": true
+      },
+      "model-preferences": {
+        "enabled": true
+      },
+      "openai-whisper-api": {
+        "enabled": false
+      },
+      "sherpa-onnx-tts": {
+        "enabled": false
+      },
+      "trello": {
+        "enabled": false
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "openrouter:default": {
+        "provider": "openrouter",
+        "mode": "api_key"
+      },
+      "anthropic:default": {
+        "provider": "openrouter",
+        "mode": "api_key"
+      },
+      "moonshotai:default": {
+        "provider": "openrouter",
+        "mode": "api_key"
+      },
+      "minimax:default": {
+        "provider": "openrouter",
+        "mode": "api_key"
+      },
+      "morph:default": {
+        "provider": "openrouter",
+        "mode": "api_key"
+      }
+    },
+    "order": {
+      "anthropic": [
+        "openrouter:default"
+      ],
+      "moonshotai": [
+        "openrouter:default"
+      ],
+      "minimax": [
+        "openrouter:default"
+      ],
+      "morph": [
+        "openrouter:default"
+      ],
+      "openai": [
+        "openrouter:default"
+      ],
+      "openrouter": [
+        "openrouter:default"
+      ]
+    }
+  },
+  "messages": {
+    "groupChat": {
+      "visibleReplies": "automatic"
+    }
+  },
+  "memory": {
+    "search": {
+      "provider": "openai-compatible",
+      "model": "openai/text-embedding-3-small",
+      "sources": [
+        "memory"
+      ],
+      "rememberAcrossConversations": false,
+      "remote": {
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "apiKey": {
+          "source": "env",
+          "provider": "env",
+          "id": "OPENROUTER_MEMORY_KEY"
+        }
+      }
+    }
+  },
+  "update": {
+    "channel": "stable",
+    "checkOnStart": false,
+    "auto": {
+      "enabled": false
+    }
+  },
+  "cron": {
+    "triggers": {
+      "enabled": true
+    }
+  }
+}

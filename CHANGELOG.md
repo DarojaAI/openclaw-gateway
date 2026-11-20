@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Product config (phase 1 of the gateway product boundary, linux-desktop-seed docs/plans/2026-11-20-gateway-product-boundary.md): verbatim copies of `config/openclaw-{ideal-config,config-policy-pins,cli-surfaces,plugins,official-digests,test,head}.json` and `scripts/ci/validate-product-manifests.py` (validate.yml + tests/product-manifests.bats). linux-desktop-seed still uses its own copies; prod overlay and bindings contract are held back (public repo).
 - `schemas/agent-config.schema.json`: canonical JSON Schema (2020-12) for per-agent `.openclaw/agent-config.yaml` files (RFC #31, Phase 1).
 - `schemas/agents-lock.schema.json`: JSON Schema for the compiled `agents.lock.toml` lockfile (RFC #31, Phase 1).
 - `scripts/validate-agent-config.py`: stdlib-only validator for agent-config.yaml with `--schema` override and dual manual/full validation paths.

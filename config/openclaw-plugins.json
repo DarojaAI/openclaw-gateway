@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "comment": "The ONE plugin manifest: plugin ids -> npm package. Every plugin's version is gateway_release (versions follow the pin; a pin bump changes gateway_release only). Baked into the image at build time (build-gateway-image.yml -> OPENCLAW_PLUGIN_SPECS = package@pin); route-c-deploy's preflight and step 4b2 (scripts/ci/check-plugin-manifest.sh) align state-resident installs to it; reconcile-openclaw-plugins.sh builds first-install specs from it. Keys are plugins.entries keys. \"bundled\" plugins ship inside the gateway runtime: no package, nothing to install. Epic #3790 item 3 (#3804).",
+  "gateway_release": "2026.11.3",
+  "plugins": {
+    "discord": { "package": "@openclaw/discord" },
+    "searxng": { "package": "@openclaw/searxng-plugin" },
+    "acpx": { "package": "@openclaw/acpx" },
+    "deepseek": { "package": "@openclaw/deepseek-provider" },
+    "perplexity": { "package": "@openclaw/perplexity-plugin" },
+    "diagnostics-otel": { "package": "@openclaw/diagnostics-otel" }
+  },
+  "bundled": ["browser", "minimax", "openai", "openrouter"],
+  "retired_comment": "Plugin ids the deploy uninstalls when present (step 4b2). xiaomi: dropped 2026-11-14, installed on test only, never enabled in config. duckduckgo: dropped 2026-11-18; web search is searxng (tools.web.search.provider), the plugin latest on ClawHub needs plugin API >=2026.11.5 so the doctor failed to install it on every deploy (prod), and test had a baked copy nothing used.",
+  "retired": ["xiaomi", "duckduckgo"]
+}

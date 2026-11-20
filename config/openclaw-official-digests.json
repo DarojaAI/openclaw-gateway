@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "comment": "openclaw version -> linux/amd64 manifest digest of ghcr.io/openclaw/openclaw:<version>, the official image docker/Dockerfile.gateway is built FROM. build-gateway-image.yml resolves the environment's pin to a digest here and fails when the version is absent. Upgrading = add the version's digest (the platform linux/amd64 entry of the registry manifest list) and move the pin. Epic #3790 item 4, issue #3805.",
+  "image": "ghcr.io/openclaw/openclaw",
+  "digests": {
+    "2026.10.8": "sha256:eba17fa04b4ac5616496c2ce374a95afb6db6ff52d8bf73bf87dc8c7b8656cad",
+    "2026.11.2": "sha256:c764f17ed94b725599043f0548ece6297f1fe4409e6dd1133b1d2fb1f8d2b599",
+    "2026.11.3": "sha256:4f97f60d52e67f4acad1934c10d2abd52ed1a586dd9a4acd0bd4e23a7d1d98cc"
+  }
+}

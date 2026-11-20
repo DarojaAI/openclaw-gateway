@@ -46,6 +46,9 @@ jobs:
           python3 scripts/merge-openclaw-config.py config/openclaw-defaults.json --validate
           python3 scripts/merge-openclaw-config.py config/openclaw-test-vm.json --validate
 
+      - name: Validate product manifests (consumed by linux-desktop-seed as a pinned release)
+        run: python3 scripts/ci/validate-product-manifests.py
+
       - name: Check skill files exist
         run: |
           test -f config/skills/model-management/SKILL.md

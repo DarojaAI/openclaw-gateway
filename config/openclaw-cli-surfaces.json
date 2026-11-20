@@ -1,0 +1,259 @@
+{
+  "manifest_version": "1",
+  "generated": "2026-10-18",
+  "surface": "openclaw CLI commands consumed by this repo's automation",
+  "scope": "scripts/ci, scripts/install, scripts/monitor, scripts/maintenance, scripts/remote, .github/workflows",
+  "probe_rule": "Each entry declares one or more commands. A command is PRESENT on a candidate openclaw version when `openclaw <verbs> --help` (fallback `openclaw <verbs> help`) exits 0 with non-empty output. A family (the entry's primary set, or one of its `alternatives`) is WORKING when EVERY command in it is present. An entry PASSES when ANY one of its families is WORKING. Only the entry's matched family is reported-so maintainers see exactly which command family their scripts must target.",
+  "excluded": [],
+  "entries": [
+
+    {
+      "id": "doctor",
+      "family": "doctor",
+      "consumed_by": [
+        "scripts/ci/snapshot-openclaw-state.sh",
+        "scripts/ci/post-deploy-sqlite-integrity-gate.sh",
+        "scripts/ci/prod-rehearsal-validate.sh",
+        ".github/workflows/deploy.yml"
+      ],
+      "note": "Durable-canary surface: the canonical migration/repair owner. --fix is the exit-code contract; compact/inspect emit --json receipts.",
+      "commands": [
+        { "template": "openclaw doctor --fix [--force] [--non-interactive]", "verbs": ["doctor", "--fix"] },
+        { "template": "openclaw doctor --session-sqlite inspect [--session-sqlite-all-agents]", "verbs": ["doctor", "--session-sqlite", "inspect"] },
+        { "template": "openclaw doctor --session-sqlite compact [--session-sqlite-all-agents] [--session-sqlite-agent <id>] [--json]", "verbs": ["doctor", "--session-sqlite", "compact"] },
+        { "template": "openclaw doctor --state-sqlite compact [--json]", "verbs": ["doctor", "--state-sqlite", "compact"] }
+      ],
+      "parses": "--session-sqlite/--state-sqlite compact --json: {ok, results}; doctor --fix: exit-code only (must be monotonic on a healthy host)."
+    },
+
+    {
+      "id": "backup-sqlite",
+      "family": "backup-sqlite",
+      "version_adaptive": true,
+      "consumed_by": [
+        "scripts/ci/snapshot-openclaw-state.sh",
+        "scripts/ci/restore-shared-state-db.sh",
+        ".github/workflows/deploy.yml (sqlite backup {create,list,verify} steps)"
+      ],
+      "note": "THE incident surface: openclaw 2026.10.4 removed the `backup sqlite` subcommand family. The gate is a real by-test-deploy failure of `backup sqlite` riding on a pin bump. Scripts that keyed on this family must migrate to the flat `backup` family below.",
+      "commands": [
+        { "template": "openclaw backup sqlite create --global --repository <repo> [--json]", "verbs": ["backup", "sqlite", "create"] },
+        { "template": "openclaw backup sqlite list --repository <repo> [--json]", "verbs": ["backup", "sqlite", "list"] },
+        { "template": "openclaw backup sqlite verify <snapshot> [--json] [--scratch <dir>]", "verbs": ["backup", "sqlite", "verify"] }
+      ],
+      "parses": "--json receipts with ok=true and snapshotPath/manifest; verify MUST take a positional snapshot dir and --scratch (never --repository).",
+      "alternatives": [
+        {
+          "family": "backup",
+          "note": "Flat replacement family for 2026.10.4+ (backup create/list/verify). If only THIS family is present, gate passes and reports matched_family=backup so maintainers see the migration target.",
+          "commands": [
+            { "template": "openclaw backup create --repository <repo> [--json]", "verbs": ["backup", "create"] },
+            { "template": "openclaw backup list [--json]", "verbs": ["backup", "list"] },
+            { "template": "openclaw backup verify <snapshot> [--json]", "verbs": ["backup", "verify"] }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "gateway-serve",
+      "family": "gateway",
+      "consumed_by": [
+        "scripts/ci/route-c-deploy.sh"
+      ],
+      "commands": [
+        { "template": "openclaw gateway [--port 18789]", "verbs": ["gateway"] }
+      ],
+      "parses": "Long-running serve verb; ExecStart reference is `openclaw gateway --port 18789`. Presence via gateway --help."
+    },
+
+    {
+      "id": "gateway-status",
+      "family": "gateway",
+      "consumed_by": [
+        ".github/workflows/deploy.yml (gateway status --deep exit-code contract)"
+      ],
+      "commands": [
+        { "template": "openclaw gateway status --deep", "verbs": ["gateway", "status", "--deep"] }
+      ],
+      "parses": "exit-code contract (0 = healthy); --deep additionally surfaces per-queue drain state."
+    },
+
+    {
+      "id": "gateway-restart",
+      "family": "gateway",
+      "consumed_by": [
+        ".github/workflows/deploy.yml"
+      ],
+      "commands": [
+        { "template": "openclaw gateway restart --force", "verbs": ["gateway", "restart", "--force"] }
+      ],
+      "parses": "exit-code contract."
+    },
+
+    {
+      "id": "gateway-stop",
+      "family": "gateway",
+      "consumed_by": [
+        "scripts/ci/snapshot-openclaw-state.sh",
+        ".github/workflows/deploy.yml"
+      ],
+      "commands": [
+        { "template": "openclaw gateway stop [--force]", "verbs": ["gateway", "stop"] }
+      ],
+      "parses": "exit-code contract."
+    },
+
+    {
+      "id": "agents-list",
+      "family": "agents",
+      "consumed_by": [
+        "scripts/ci/post-deploy-health-check-agent.sh",
+        "scripts/ci/lib-post-deploy-health-check.sh",
+        ".github/workflows/integration-tests.yml"
+      ],
+      "commands": [
+        { "template": "openclaw agents list [--ids-only]", "verbs": ["agents", "list"] }
+      ],
+      "parses": "plain lines 'Name ID'; --ids-only narrows to ids only. Health probes tolerance 30s."
+    },
+
+    {
+      "id": "agent-run",
+      "family": "agents",
+      "consumed_by": [
+        "scripts/ci/post-deploy-health-check-agent.sh",
+        "scripts/ci/post-deploy-gateway-per-agent-probe.sh"
+      ],
+      "commands": [
+        { "template": "openclaw agent --agent <id> --session-key <key> --message <m> --model <provider> --local", "verbs": ["agent"] }
+      ],
+      "parses": "per-agent ping/round-trip; exit-code + parsed session transcript."
+    },
+
+    {
+      "id": "config-schema",
+      "family": "config",
+      "consumed_by": [
+        "scripts/ci/check-openclaw-schema.sh",
+        "scripts/ci/refresh-openclaw-schema.sh",
+        ".github/workflows/refresh-canonical-schema.yml"
+      ],
+      "commands": [
+        { "template": "openclaw config schema > schemas/openclaw-config.schema.json", "verbs": ["config", "schema"] }
+      ],
+      "parses": "JSON Schema; gate asserts non-empty + a properties/definitions node via jq."
+    },
+
+
+    {
+      "id": "plugins-list",
+      "family": "plugins",
+      "consumed_by": [
+        "scripts/ci/post-deploy-health-check-extensions.sh",
+        ".github/workflows/deploy.yml"
+      ],
+      "commands": [
+        { "template": "openclaw plugins list [--json]", "verbs": ["plugins", "list"] }
+      ],
+      "parses": "--json array of installed plugins (8.x id 'discord' vs 7.x varied)."
+    },
+
+
+    {
+      "id": "channels-status",
+      "family": "channels",
+      "consumed_by": [
+        "scripts/ci/post-deploy-health-check-extensions.sh"
+      ],
+      "commands": [
+        { "template": "openclaw channels status [--json]", "verbs": ["channels", "status"] }
+      ],
+      "parses": "--json channel runtime health; the probe tries bare form then --json."
+    },
+
+    {
+      "id": "channels-list",
+      "family": "channels",
+      "consumed_by": [
+        "scripts/ci/verify-vm-state.sh"
+      ],
+      "commands": [
+        { "template": "openclaw channels list", "verbs": ["channels", "list"] }
+      ],
+      "parses": "channel id list (edited via VERIFY_CHANNELS_LIST_OUTPUT in bats)."
+    },
+
+    {
+      "id": "memory-index",
+      "family": "memory",
+      "consumed_by": [],
+      "commands": [
+        { "template": "openclaw memory index --force", "verbs": ["memory", "index"] }
+      ],
+      "parses": "index rebuild; run under OPENCLAW_GATEWAY_TOKEN/GATEWAY_AUTH_TOKEN."
+    },
+
+    {
+      "id": "memory-forget",
+      "family": "memory",
+      "consumed_by": [
+        "scripts/maintenance/prune-memory-index.sh",
+        ".github/workflows/deploy.yml (openclaw-memory-prune.service)"
+      ],
+      "commands": [
+        { "template": "openclaw memory forget --session <id>", "verbs": ["memory", "forget"] }
+      ],
+      "parses": "durable per-session prune."
+    },
+
+
+    {
+      "id": "skills-workshop-list",
+      "family": "skills",
+      "consumed_by": [],
+      "commands": [
+        { "template": "openclaw skills workshop list", "verbs": ["skills", "workshop", "list"] }
+      ],
+      "parses": "list of skill workshop paths for artifact copy (single source: repo skills/ — P1 #3068)."
+    },
+
+    {
+      "id": "daemon-status",
+      "family": "daemon",
+      "consumed_by": [
+        "scripts/ci/post-deploy-health-check-gateway.sh"
+      ],
+      "commands": [
+        { "template": "openclaw daemon status --json", "verbs": ["daemon", "status"] }
+      ],
+      "parses": "--json daemon status; paired with HTTP /healthz probe (curl, not CLI)."
+    },
+
+    {
+      "id": "update",
+      "family": "update",
+      "consumed_by": [
+        ".github/workflows/deploy.yml (openclaw update cleanup --yes --json)"
+      ],
+      "commands": [
+        { "template": "openclaw update --tag <pin> --yes --no-restart --json", "verbs": ["update"] },
+        { "template": "openclaw update cleanup --yes --json", "verbs": ["update", "cleanup"] }
+      ],
+      "parses": "--json receipt of the native-branch install; cleanup removes stale staging captures."
+    },
+
+    {
+      "id": "secrets-audit",
+      "family": "secrets",
+      "consumed_by": [
+        "scripts/ci/generate-openclaw-env-overrides.py"
+      ],
+      "commands": [
+        { "template": "openclaw secrets audit --check", "verbs": ["secrets", "audit"] }
+      ],
+      "parses": "reports REF_SHADOWED / plaintext-secret findings (--check)."
+    }
+
+  ]
+}
