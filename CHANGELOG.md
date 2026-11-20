@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- The per-invocation preflight gate (contract preflight-v1: P0 attribution, P1 tenant model, P2 consent, P3 posture) is retired (operator decision 2026-11-20). It has not run since the Route C cutover; native OpenClaw controls (Discord channel access controls, agent bindings, per-agent model allowlist, tool policies/exec approvals/sandbox, transcripts + diagnostics-otel) cover the risks. Removes `scripts/preflight-gate.py`, `config/preflight-{consent,posture,principals}.json` and `config/examples/preflight/`, `extensions/preflight-emitter/`, `docs/contracts/preflight-v1.md`, the preflight bats suites and the tenancy-broker test mock. The `before_route_inbound_message` hook (#148) is obsolete (upstream PR openclaw#176299 closed unmerged) and is dropped from `config/upstream-watch-items.json`.
+
 ### Added
 
 - `schemas/agent-config.schema.json`: canonical JSON Schema (2020-12) for per-agent `.openclaw/agent-config.yaml` files (RFC #31, Phase 1).

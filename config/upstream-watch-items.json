@@ -10,11 +10,6 @@
       "name": "feat(sessions): transcript archive retention config + post-archive vacuum pass"
     },
     {
-      "kind": "pr",
-      "number": 176299,
-      "name": "feat(channels): before_route_inbound_message preflight hook"
-    },
-    {
       "kind": "issue",
       "number": 176062,
       "name": "doctor: reappeared identical auth profile sources are re-archived on every run (unbounded .migrated-* litter)"
