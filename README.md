@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-11-20 — moved to [DarojaAI/linux-desktop-seed](https://github.com/DarojaAI/linux-desktop-seed) (pin, docs, scripts); preflight gate and task bus retired.** This repository is read-only history; open issues and PRs in linux-desktop-seed.
+
 # OpenClaw Gateway
 
 Discord AI agent platform built on [OpenClaw](https://openclaw.ai). Deployed as Layer 3b on top of [`linux-desktop-setup`](https://github.com/DarojaAI/linux-desktop-setup) VMs.
